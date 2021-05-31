@@ -372,7 +372,7 @@ def hash_decode(x: str) -> bytes:
 ############ functions from pywallet #####################
 
 def hash160_to_b58_address(h160: bytes, addrtype: int) -> str:
-    s = bytes([addrtype]) + h160
+    s = bytes.fromhex(addrtype) + h160
     s = s + sha256d(s)[0:4]
     return base_encode(s, base=58)
 
@@ -380,9 +380,9 @@ def hash160_to_b58_address(h160: bytes, addrtype: int) -> str:
 def b58_address_to_hash160(addr: str) -> Tuple[int, bytes]:
     addr = to_bytes(addr, 'ascii')
     _bytes = DecodeBase58Check(addr)
-    if len(_bytes) != 21:
-        raise Exception(f'expected 21 payload bytes in base58 address. got: {len(_bytes)}')
-    return _bytes[0], _bytes[1:21]
+    if len(_bytes) != 22:
+        raise Exception(f'expected 22 payload bytes in base58 address. got: {len(_bytes)}')
+    return _bytes[0], _bytes[1:22]
 
 
 def hash160_to_p2pkh(h160: bytes, *, net=None) -> str:

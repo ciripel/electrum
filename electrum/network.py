@@ -22,20 +22,14 @@
 # SOFTWARE.
 import asyncio
 import time
-import queue
 import os
 import random
 import re
 from collections import defaultdict
 import threading
-import socket
 import json
-import sys
 import asyncio
 from typing import NamedTuple, Optional, Sequence, List, Dict, Tuple, TYPE_CHECKING, Iterable, Set, Any
-import traceback
-import concurrent
-from concurrent import futures
 import copy
 import functools
 
@@ -45,16 +39,14 @@ from aiohttp import ClientResponse
 
 from . import util
 from .util import (log_exceptions, ignore_exceptions,
-                   bfh, SilentTaskGroup, make_aiohttp_session, send_exception_to_crash_reporter,
-                   is_hash256_str, is_non_negative_integer, MyEncoder, NetworkRetryManager,
+                   SilentTaskGroup, make_aiohttp_session, send_exception_to_crash_reporter,
+                   MyEncoder, NetworkRetryManager,
                    nullcontext)
-from .bitcoin import COIN
 from . import constants
 from . import blockchain
-from . import bitcoin
 from . import dns_hacks
 from .transaction import Transaction
-from .blockchain import Blockchain, HEADER_SIZE
+from .blockchain import Blockchain
 from .interface import (Interface, PREFERRED_NETWORK_PROTOCOL,
                         RequestTimedOut, NetworkTimeout, BUCKET_NAME_OF_ONION_SERVERS,
                         NetworkException, RequestCorrupted, ServerAddr)
