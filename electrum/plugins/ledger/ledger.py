@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 from electrum import ecc
 from electrum import bip32
 from electrum.crypto import hash_160
-from electrum.bitcoin import int_to_hex, var_int, is_segwit_script_type, is_b58_address
+from electrum.bitcoin import int_to_hex, var_int, is_b58_address
 from electrum.bip32 import BIP32Node, convert_bip32_intpath_to_strpath
 from electrum.i18n import _
 from electrum.keystore import Hardware_KeyStore
@@ -42,12 +42,7 @@ except ImportError as e:
 
 MSG_NEEDS_FW_UPDATE_GENERIC = _('Firmware version too old. Please update at') + \
                       ' https://www.ledgerwallet.com'
-MSG_NEEDS_FW_UPDATE_SEGWIT = _('Firmware version (or "Bitcoin" app) too old for Segwit support. Please update at') + \
-                      ' https://www.ledgerwallet.com'
 MULTI_OUTPUT_SUPPORT = '1.1.4'
-SEGWIT_SUPPORT = '1.1.10'
-SEGWIT_SUPPORT_SPECIAL = '1.0.4'
-SEGWIT_TRUSTEDINPUTS = '1.4.0'
 
 
 def test_pin_unlocked(func):
@@ -117,10 +112,6 @@ class Ledger_Client(HardwareClientBase):
         # This only happens once so it's bearable
         #self.get_client() # prompt for the PIN before displaying the dialog if necessary
         #self.handler.show_message("Computing master public key")
-        if xtype in ['p2wpkh', 'p2wsh'] and not self.supports_native_segwit():
-            raise UserFacingException(MSG_NEEDS_FW_UPDATE_SEGWIT)
-        if xtype in ['p2wpkh-p2sh', 'p2wsh-p2sh'] and not self.supports_segwit():
-            raise UserFacingException(MSG_NEEDS_FW_UPDATE_SEGWIT)
         bip32_path = bip32.normalize_bip32_derivation(bip32_path)
         bip32_intpath = bip32.convert_bip32_path_to_list_of_uint32(bip32_path)
         bip32_path = bip32_path[2:]  # cut off "m/"
@@ -166,24 +157,12 @@ class Ledger_Client(HardwareClientBase):
     def supports_multi_output(self):
         return self.multiOutputSupported
 
-    def supports_segwit(self):
-        return self.segwitSupported
-
-    def supports_native_segwit(self):
-        return self.nativeSegwitSupported
-
-    def supports_segwit_trustedInputs(self):
-        return self.segwitTrustedInputs
-
     @runs_in_hwd_thread
     def perform_hw1_preflight(self):
         try:
             firmwareInfo = self.dongleObject.getFirmwareVersion()
             firmware = firmwareInfo['version']
             self.multiOutputSupported = versiontuple(firmware) >= versiontuple(MULTI_OUTPUT_SUPPORT)
-            self.nativeSegwitSupported = versiontuple(firmware) >= versiontuple(SEGWIT_SUPPORT)
-            self.segwitSupported = self.nativeSegwitSupported or (firmwareInfo['specialVersion'] == 0x20 and versiontuple(firmware) >= versiontuple(SEGWIT_SUPPORT_SPECIAL))
-            self.segwitTrustedInputs = versiontuple(firmware) >= versiontuple(SEGWIT_TRUSTEDINPUTS)
 
             if not checkFirmware(firmwareInfo):
                 self.close()
@@ -354,7 +333,6 @@ class Ledger_KeyStore(Hardware_KeyStore):
         changePath = ""
         output = None
         p2shTransaction = False
-        segwitTransaction = False
         pin = ""
         client_ledger = self.get_client() # prompt for the PIN before displaying the dialog if necessary
         client_electrum = self.get_client_electrum()
@@ -368,16 +346,6 @@ class Ledger_KeyStore(Hardware_KeyStore):
             if txin.script_type in ['p2sh']:
                 p2shTransaction = True
 
-            if txin.script_type in ['p2wpkh-p2sh', 'p2wsh-p2sh']:
-                if not client_electrum.supports_segwit():
-                    self.give_error(MSG_NEEDS_FW_UPDATE_SEGWIT)
-                segwitTransaction = True
-
-            if txin.script_type in ['p2wpkh', 'p2wsh']:
-                if not client_electrum.supports_native_segwit():
-                    self.give_error(MSG_NEEDS_FW_UPDATE_SEGWIT)
-                segwitTransaction = True
-
             my_pubkey, full_path = self.find_my_pubkey_in_txinout(txin)
             if not full_path:
                 self.give_error("No matching pubkey for sign_transaction")  # should never happen
@@ -385,7 +353,7 @@ class Ledger_KeyStore(Hardware_KeyStore):
 
             redeemScript = Transaction.get_preimage_script(txin)
             txin_prev_tx = txin.utxo
-            if txin_prev_tx is None and not txin.is_segwit():
+            if txin_prev_tx is None:
                 raise UserFacingException(_('Missing previous tx for legacy input.'))
             txin_prev_tx_raw = txin_prev_tx.serialize() if txin_prev_tx else None
             inputs.append([txin_prev_tx_raw,
@@ -449,20 +417,12 @@ class Ledger_KeyStore(Hardware_KeyStore):
             # Get trusted inputs from the original transactions
             for utxo in inputs:
                 sequence = int_to_hex(utxo[5], 4)
-                if segwitTransaction and not client_electrum.supports_segwit_trustedInputs():
-                    tmp = bfh(utxo[3])[::-1]
-                    tmp += bfh(int_to_hex(utxo[1], 4))
-                    tmp += bfh(int_to_hex(utxo[6], 8))  # txin['value']
-                    chipInputs.append({'value' : tmp, 'witness' : True, 'sequence' : sequence})
-                    redeemScripts.append(bfh(utxo[2]))
-                elif (not p2shTransaction) or client_electrum.supports_multi_output():
+                if (not p2shTransaction) or client_electrum.supports_multi_output():
                     txtmp = bitcoinTransaction(bfh(utxo[0]))
                     trustedInput = client_ledger.getTrustedInput(txtmp, utxo[1])
                     trustedInput['sequence'] = sequence
-                    if segwitTransaction:
-                        trustedInput['witness'] = True
                     chipInputs.append(trustedInput)
-                    if p2shTransaction or segwitTransaction:
+                    if p2shTransaction:
                         redeemScripts.append(bfh(utxo[2]))
                     else:
                         redeemScripts.append(txtmp.outputs[utxo[1]].script)
@@ -477,8 +437,8 @@ class Ledger_KeyStore(Hardware_KeyStore):
             inputIndex = 0
             rawTx = tx.serialize_to_network()
             client_ledger.enableAlternate2fa(False)
-            if segwitTransaction:
-                client_ledger.startUntrustedTransaction(True, inputIndex,
+            while inputIndex < len(inputs):
+                client_ledger.startUntrustedTransaction(firstTransaction, inputIndex,
                                                             chipInputs, redeemScripts[inputIndex], version=tx.version)
                 # we don't set meaningful outputAddress, amount and fees
                 # as we only care about the alternateEncoding==True branch
@@ -492,43 +452,16 @@ class Ledger_KeyStore(Hardware_KeyStore):
                     if not pin:
                         raise UserWarning()
                     self.handler.show_message(_("Confirmed. Signing Transaction..."))
-                while inputIndex < len(inputs):
-                    singleInput = [chipInputs[inputIndex]]
-                    client_ledger.startUntrustedTransaction(False, 0,
-                                                            singleInput, redeemScripts[inputIndex], version=tx.version)
+                else:
+                    # Sign input with the provided PIN
                     inputSignature = client_ledger.untrustedHashSign(inputsPaths[inputIndex], pin, lockTime=tx.locktime)
                     inputSignature[0] = 0x30 # force for 1.4.9+
                     my_pubkey = inputs[inputIndex][4]
                     tx.add_signature_to_txin(txin_idx=inputIndex,
-                                             signing_pubkey=my_pubkey.hex(),
-                                             sig=inputSignature.hex())
+                                                signing_pubkey=my_pubkey.hex(),
+                                                sig=inputSignature.hex())
                     inputIndex = inputIndex + 1
-            else:
-                while inputIndex < len(inputs):
-                    client_ledger.startUntrustedTransaction(firstTransaction, inputIndex,
-                                                                chipInputs, redeemScripts[inputIndex], version=tx.version)
-                    # we don't set meaningful outputAddress, amount and fees
-                    # as we only care about the alternateEncoding==True branch
-                    outputData = client_ledger.finalizeInput(b'', 0, 0, changePath, bfh(rawTx))
-                    outputData['outputData'] = txOutput
-                    if outputData['confirmationNeeded']:
-                        outputData['address'] = output
-                        self.handler.finished()
-                        # do the authenticate dialog and get pin:
-                        pin = self.handler.get_auth(outputData, client=client_electrum)
-                        if not pin:
-                            raise UserWarning()
-                        self.handler.show_message(_("Confirmed. Signing Transaction..."))
-                    else:
-                        # Sign input with the provided PIN
-                        inputSignature = client_ledger.untrustedHashSign(inputsPaths[inputIndex], pin, lockTime=tx.locktime)
-                        inputSignature[0] = 0x30 # force for 1.4.9+
-                        my_pubkey = inputs[inputIndex][4]
-                        tx.add_signature_to_txin(txin_idx=inputIndex,
-                                                 signing_pubkey=my_pubkey.hex(),
-                                                 sig=inputSignature.hex())
-                        inputIndex = inputIndex + 1
-                    firstTransaction = False
+                firstTransaction = False
         except UserWarning:
             self.handler.show_error(_('Cancelled by user'))
             return
@@ -553,8 +486,6 @@ class Ledger_KeyStore(Hardware_KeyStore):
         client = self.get_client()
         address_path = self.get_derivation_prefix()[2:] + "/%d/%d"%sequence
         self.handler.show_message(_("Showing address ..."))
-        segwit = is_segwit_script_type(txin_type)
-        segwitNative = txin_type == 'p2wpkh'
         try:
             client.getWalletPublicKey(address_path, showOnScreen=True, segwit=segwit, segwitNative=segwitNative)
         except BTChipException as e:
@@ -600,10 +531,9 @@ class LedgerPlugin(HW_PluginBase):
         0x10: "Ledger Nano S",
         0x40: "Ledger Nano X",
     }
-    SUPPORTED_XTYPES = ('standard', 'p2wpkh-p2sh', 'p2wpkh', 'p2wsh-p2sh', 'p2wsh')
+    SUPPORTED_XTYPES = ('standard')
 
     def __init__(self, parent, config, name):
-        self.segwit = config.get("segwit")
         HW_PluginBase.__init__(self, parent, config, name)
         self.libraries_available = self.check_libraries_available()
         if not self.libraries_available:

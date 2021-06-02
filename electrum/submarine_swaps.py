@@ -9,8 +9,7 @@ import attr
 
 from .crypto import sha256, hash_160
 from .ecc import ECPrivkey
-from .bitcoin import (script_to_p2wsh, opcodes, p2wsh_nested_script, push_script,
-                      is_segwit_address, construct_witness)
+from .bitcoin import opcodes,  push_script, construct_witness
 from .transaction import PartialTxInput, PartialTxOutput, PartialTransaction
 from .transaction import script_GetOp, match_script_against_template, OPPushDataGeneric, OPPushDataPubkey
 from .util import log_exceptions
