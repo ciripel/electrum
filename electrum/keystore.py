@@ -26,8 +26,7 @@
 
 from unicodedata import normalize
 import hashlib
-import re
-from typing import Tuple, TYPE_CHECKING, Union, Sequence, Optional, Dict, List, NamedTuple
+from typing import Tuple, TYPE_CHECKING, Union, Sequence, Optional, Dict, List
 from functools import lru_cache
 from abc import ABC, abstractmethod
 
@@ -36,13 +35,13 @@ from .bitcoin import deserialize_privkey, serialize_privkey, BaseDecodeError
 from .transaction import Transaction, PartialTransaction, PartialTxInput, PartialTxOutput, TxInput
 from .bip32 import (convert_bip32_path_to_list_of_uint32, BIP32_PRIME,
                     is_xpub, is_xprv, BIP32Node, normalize_bip32_derivation,
-                    convert_bip32_intpath_to_strpath, is_xkey_consistent_with_key_origin_info)
+                    is_xkey_consistent_with_key_origin_info)
 from .ecc import string_to_number
 from .crypto import (pw_decode, pw_encode, sha256, sha256d, PW_HASH_VERSION_LATEST,
                      SUPPORTED_PW_HASH_VERSIONS, UnsupportedPasswordHashVersion, hash_160)
 from .util import (InvalidPassword, WalletFileException,
-                   BitcoinException, bh2u, bfh, inv_dict, is_hex_str)
-from .mnemonic import Mnemonic, Wordlist, seed_type, is_seed
+                   BitcoinException, bfh, is_hex_str)
+from .mnemonic import Mnemonic, Wordlist, seed_type
 from .plugin import run_hook
 from .logging import Logger
 
@@ -623,19 +622,6 @@ class BIP32_KeyStore(Xpub, Deterministic_KeyStore):
         cK = ecc.ECPrivkey(k).get_public_key_bytes()
         return cK, k
 
-    def can_have_deterministic_lightning_xprv(self):
-        if (self.get_seed_type() == 'segwit'
-                and self.get_bip32_node_for_xpub().xtype == 'p2wpkh'):
-            return True
-        return False
-
-    def get_lightning_xprv(self, password) -> str:
-        assert self.can_have_deterministic_lightning_xprv()
-        xprv = self.get_master_private_key(password)
-        rootnode = BIP32Node.from_xkey(xprv)
-        node = rootnode.subkey_at_private_derivation("m/67'/")
-        return node.to_xprv()
-
 class Old_KeyStore(MasterPublicKeyMixin, Deterministic_KeyStore):
 
     type = 'old'
@@ -911,43 +897,11 @@ def bip39_is_checksum_valid(
     return checksum == calculated_checksum, True
 
 
-def from_bip39_seed(seed, passphrase, derivation, xtype=None):
+def from_bip39_seed(seed, passphrase, derivation, xtype='standard'):
     k = BIP32_KeyStore({})
     bip32_seed = bip39_to_seed(seed, passphrase)
-    if xtype is None:
-        xtype = xtype_from_derivation(derivation)
     k.add_xprv_from_seed(bip32_seed, xtype, derivation)
     return k
-
-
-PURPOSE48_SCRIPT_TYPES = {
-    'p2wsh-p2sh': 1,  # specifically multisig
-    'p2wsh': 2,       # specifically multisig
-}
-PURPOSE48_SCRIPT_TYPES_INV = inv_dict(PURPOSE48_SCRIPT_TYPES)
-
-
-def xtype_from_derivation(derivation: str) -> str:
-    """Returns the script type to be used for this derivation."""
-    bip32_indices = convert_bip32_path_to_list_of_uint32(derivation)
-    if len(bip32_indices) >= 1:
-        if bip32_indices[0] == 84 + BIP32_PRIME:
-            return 'p2wpkh'
-        elif bip32_indices[0] == 49 + BIP32_PRIME:
-            return 'p2wpkh-p2sh'
-        elif bip32_indices[0] == 44 + BIP32_PRIME:
-            return 'standard'
-        elif bip32_indices[0] == 45 + BIP32_PRIME:
-            return 'standard'
-
-    if len(bip32_indices) >= 4:
-        if bip32_indices[0] == 48 + BIP32_PRIME:
-            # m / purpose' / coin_type' / account' / script_type' / change / address_index
-            script_type_int = bip32_indices[3] - BIP32_PRIME
-            script_type = PURPOSE48_SCRIPT_TYPES_INV.get(script_type_int)
-            if script_type is not None:
-                return script_type
-    return 'standard'
 
 
 hw_keystores = {}
@@ -1030,16 +984,16 @@ def bip44_derivation(account_id, bip43_purpose=44):
     return normalize_bip32_derivation(der)
 
 
-def purpose48_derivation(account_id: int, xtype: str) -> str:
-    # m / purpose' / coin_type' / account' / script_type' / change / address_index
-    bip43_purpose = 48
-    coin = constants.net.BIP44_COIN_TYPE
-    account_id = int(account_id)
-    script_type_int = PURPOSE48_SCRIPT_TYPES.get(xtype)
-    if script_type_int is None:
-        raise Exception('unknown xtype: {}'.format(xtype))
-    der = "m/%d'/%d'/%d'/%d'" % (bip43_purpose, coin, account_id, script_type_int)
-    return normalize_bip32_derivation(der)
+# def purpose48_derivation(account_id: int, xtype: str) -> str:
+#     # m / purpose' / coin_type' / account' / script_type' / change / address_index
+#     bip43_purpose = 48
+#     coin = constants.net.BIP44_COIN_TYPE
+#     account_id = int(account_id)
+#     script_type_int = PURPOSE48_SCRIPT_TYPES.get(xtype)
+#     if script_type_int is None:
+#         raise Exception('unknown xtype: {}'.format(xtype))
+#     der = "m/%d'/%d'/%d'/%d'" % (bip43_purpose, coin, account_id, script_type_int)
+#     return normalize_bip32_derivation(der)
 
 
 def from_seed(seed, passphrase, is_p2sh=False):
@@ -1047,17 +1001,13 @@ def from_seed(seed, passphrase, is_p2sh=False):
     if t == 'old':
         keystore = Old_KeyStore({})
         keystore.add_seed(seed)
-    elif t in ['standard', 'segwit']:
+    elif t == 'standard':
         keystore = BIP32_KeyStore({})
         keystore.add_seed(seed)
         keystore.passphrase = passphrase
         bip32_seed = Mnemonic.mnemonic_to_seed(seed, passphrase)
-        if t == 'standard':
-            der = "m/"
-            xtype = 'standard'
-        else:
-            der = "m/1'/" if is_p2sh else "m/0'/"
-            xtype = 'p2wsh' if is_p2sh else 'p2wpkh'
+        der = "m/"
+        xtype = 'standard'
         keystore.add_xprv_from_seed(bip32_seed, xtype, der)
     else:
         raise BitcoinException('Unexpected seed type {}'.format(repr(t)))

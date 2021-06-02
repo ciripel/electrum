@@ -23,17 +23,14 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import hashlib
-from typing import List, Tuple, TYPE_CHECKING, Optional, Union, Sequence
+from typing import Tuple, TYPE_CHECKING, Optional, Union, Sequence
 import enum
 from enum import IntEnum, Enum
 
 from .util import bfh, bh2u, BitcoinException, assert_bytes, to_bytes, inv_dict, is_hex_str
-from . import version
-from . import segwit_addr
 from . import constants
 from . import ecc
-from .crypto import sha256d, sha256, hash_160, hmac_oneshot
+from .crypto import sha256d, sha256, hash_160
 
 if TYPE_CHECKING:
     from .network import Network
@@ -350,7 +347,6 @@ def relayfee(network: 'Network' = None) -> int:
 
 # see https://github.com/bitcoin/bitcoin/blob/a62f0ed64f8bbbdfe6467ac5ce92ef5b5222d1bd/src/policy/policy.cpp#L14
 DUST_LIMIT_DEFAULT_SAT_LEGACY = 546
-DUST_LIMIT_DEFAULT_SAT_SEGWIT = 294
 
 
 def dust_threshold(network: 'Network' = None) -> int:
@@ -372,7 +368,7 @@ def hash_decode(x: str) -> bytes:
 ############ functions from pywallet #####################
 
 def hash160_to_b58_address(h160: bytes, addrtype: int) -> str:
-    s = bytes.fromhex(addrtype) + h160
+    s = addrtype + h160
     s = s + sha256d(s)[0:4]
     return base_encode(s, base=58)
 
@@ -397,37 +393,10 @@ def public_key_to_p2pkh(public_key: bytes, *, net=None) -> str:
     if net is None: net = constants.net
     return hash160_to_p2pkh(hash_160(public_key), net=net)
 
-def hash_to_segwit_addr(h: bytes, witver: int, *, net=None) -> str:
-    if net is None: net = constants.net
-    addr = segwit_addr.encode_segwit_address(net.SEGWIT_HRP, witver, h)
-    assert addr is not None
-    return addr
-
-def public_key_to_p2wpkh(public_key: bytes, *, net=None) -> str:
-    if net is None: net = constants.net
-    return hash_to_segwit_addr(hash_160(public_key), witver=0, net=net)
-
-def script_to_p2wsh(script: str, *, net=None) -> str:
-    if net is None: net = constants.net
-    return hash_to_segwit_addr(sha256(bfh(script)), witver=0, net=net)
-
-def p2wpkh_nested_script(pubkey: str) -> str:
-    pkh = hash_160(bfh(pubkey))
-    return construct_script([0, pkh])
-
-def p2wsh_nested_script(witness_script: str) -> str:
-    wsh = sha256(bfh(witness_script))
-    return construct_script([0, wsh])
-
 def pubkey_to_address(txin_type: str, pubkey: str, *, net=None) -> str:
     if net is None: net = constants.net
     if txin_type == 'p2pkh':
         return public_key_to_p2pkh(bfh(pubkey), net=net)
-    elif txin_type == 'p2wpkh':
-        return public_key_to_p2wpkh(bfh(pubkey), net=net)
-    elif txin_type == 'p2wpkh-p2sh':
-        scriptSig = p2wpkh_nested_script(pubkey)
-        return hash160_to_p2sh(hash_160(bfh(scriptSig)), net=net)
     else:
         raise NotImplementedError(txin_type)
 
@@ -438,13 +407,6 @@ def redeem_script_to_address(txin_type: str, scriptcode: str, *, net=None) -> st
     if txin_type == 'p2sh':
         # given scriptcode is a redeem_script
         return hash160_to_p2sh(hash_160(bfh(scriptcode)), net=net)
-    elif txin_type == 'p2wsh':
-        # given scriptcode is a witness_script
-        return script_to_p2wsh(scriptcode, net=net)
-    elif txin_type == 'p2wsh-p2sh':
-        # given scriptcode is a witness_script
-        redeem_script = p2wsh_nested_script(scriptcode)
-        return hash160_to_p2sh(hash_160(bfh(redeem_script)), net=net)
     else:
         raise NotImplementedError(txin_type)
 
@@ -457,12 +419,7 @@ def script_to_address(script: str, *, net=None) -> str:
 def address_to_script(addr: str, *, net=None) -> str:
     if net is None: net = constants.net
     if not is_address(addr, net=net):
-        raise BitcoinException(f"invalid bitcoin address: {addr}")
-    witver, witprog = segwit_addr.decode_segwit_address(net.SEGWIT_HRP, addr)
-    if witprog is not None:
-        if not (0 <= witver <= 16):
-            raise BitcoinException(f'impossible witness version: {witver}')
-        return construct_script([witver, bytes(witprog)])
+        raise BitcoinException(f"invalid TENT address: {addr}")
     addrtype, hash_160_ = b58_address_to_hash160(addr)
     if addrtype == net.ADDRTYPE_P2PKH:
         script = pubkeyhash_to_p2pkh_script(bh2u(hash_160_))
@@ -475,29 +432,17 @@ def address_to_script(addr: str, *, net=None) -> str:
 
 class OnchainOutputType(Enum):
     """Opaque types of scriptPubKeys.
-    In case of p2sh, p2wsh and similar, no knowledge of redeem script, etc.
+    In case of p2sh and similar, no knowledge of redeem script, etc.
     """
     P2PKH = enum.auto()
     P2SH = enum.auto()
-    WITVER0_P2WPKH = enum.auto()
-    WITVER0_P2WSH = enum.auto()
 
 
 def address_to_hash(addr: str, *, net=None) -> Tuple[OnchainOutputType, bytes]:
     """Return (type, pubkey hash / witness program) for an address."""
     if net is None: net = constants.net
     if not is_address(addr, net=net):
-        raise BitcoinException(f"invalid bitcoin address: {addr}")
-    witver, witprog = segwit_addr.decode_segwit_address(net.SEGWIT_HRP, addr)
-    if witprog is not None:
-        if witver != 0:
-            raise BitcoinException(f"not implemented handling for witver={witver}")
-        if len(witprog) == 20:
-            return OnchainOutputType.WITVER0_P2WPKH, bytes(witprog)
-        elif len(witprog) == 32:
-            return OnchainOutputType.WITVER0_P2WSH, bytes(witprog)
-        else:
-            raise BitcoinException(f"unexpected length for segwit witver=0 witprog: len={len(witprog)}")
+        raise BitcoinException(f"invalid TENT address: {addr}")
     addrtype, hash_160_ = b58_address_to_hash160(addr)
     if addrtype == net.ADDRTYPE_P2PKH:
         return OnchainOutputType.P2PKH, hash_160_
@@ -629,21 +574,12 @@ def DecodeBase58Check(psz: Union[bytes, str]) -> bytes:
 
 
 # backwards compat
-# extended WIF for segwit (used in 3.0.x; but still used internally)
 # the keys in this dict should be a superset of what Imported Wallets can import
 WIF_SCRIPT_TYPES = {
     'p2pkh':0,
-    'p2wpkh':1,
-    'p2wpkh-p2sh':2,
     'p2sh':5,
-    'p2wsh':6,
-    'p2wsh-p2sh':7
 }
 WIF_SCRIPT_TYPES_INV = inv_dict(WIF_SCRIPT_TYPES)
-
-
-def is_segwit_script_type(txin_type: str) -> bool:
-    return txin_type in ('p2wpkh', 'p2wpkh-p2sh', 'p2wsh', 'p2wsh-p2sh')
 
 
 def serialize_privkey(secret: bytes, compressed: bool, txin_type: str, *,
@@ -700,9 +636,6 @@ def deserialize_privkey(key: str) -> Tuple[str, bytes, bool]:
             raise BitcoinException(f'invalid WIF key. length suggests compressed pubkey, '
                                    f'but last byte is {vch[33]} != 0x01')
 
-    if is_segwit_script_type(txin_type) and not compressed:
-        raise BitcoinException('only compressed public keys can be used in segwit scripts')
-
     secret_bytes = vch[1:33]
     # we accept secrets outside curve range; cast into range here:
     secret_bytes = ecc.ECPrivkey.normalize_secret_bytes(secret_bytes)
@@ -718,13 +651,6 @@ def address_from_private_key(sec: str) -> str:
     public_key = ecc.ECPrivkey(privkey).get_public_key_hex(compressed=compressed)
     return pubkey_to_address(txin_type, public_key)
 
-def is_segwit_address(addr: str, *, net=None) -> bool:
-    if net is None: net = constants.net
-    try:
-        witver, witprog = segwit_addr.decode_segwit_address(net.SEGWIT_HRP, addr)
-    except Exception as e:
-        return False
-    return witprog is not None
 
 def is_b58_address(addr: str, *, net=None) -> bool:
     if net is None: net = constants.net
@@ -739,8 +665,7 @@ def is_b58_address(addr: str, *, net=None) -> bool:
 
 def is_address(addr: str, *, net=None) -> bool:
     if net is None: net = constants.net
-    return is_segwit_address(addr, net=net) \
-           or is_b58_address(addr, net=net)
+    return is_b58_address(addr, net=net)
 
 
 def is_private_key(key: str, *, raise_on_error=False) -> bool:

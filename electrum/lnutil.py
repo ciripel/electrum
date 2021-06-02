@@ -21,7 +21,6 @@ from .ecc import CURVE_ORDER, sig_string_from_der_sig, ECPubkey, string_to_numbe
 from . import ecc, bitcoin, crypto, transaction
 from .bitcoin import (push_script, redeem_script_to_address, address_to_script,
                       construct_witness, construct_script)
-from . import segwit_addr
 from .i18n import _
 from .lnaddr import lndecode
 from .bip32 import BIP32Node, BIP32_PRIME

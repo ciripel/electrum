@@ -26,21 +26,18 @@
 import os
 import sys
 import copy
-import traceback
-from functools import partial
 from typing import List, TYPE_CHECKING, Tuple, NamedTuple, Any, Dict, Optional, Union
 
 from . import bitcoin
 from . import keystore
 from . import mnemonic
 from .bip32 import is_bip32_derivation, xpub_type, normalize_bip32_derivation, BIP32Node
-from .keystore import bip44_derivation, purpose48_derivation, Hardware_KeyStore, KeyStore, bip39_to_seed
-from .wallet import (Imported_Wallet, Standard_Wallet, Multisig_Wallet,
-                     wallet_types, Wallet, Abstract_Wallet)
+from .keystore import bip44_derivation, Hardware_KeyStore, KeyStore, bip39_to_seed
+from .wallet import wallet_types
 from .storage import WalletStorage, StorageEncryptionVersion
 from .wallet_db import WalletDB
 from .i18n import _
-from .util import UserCancelled, InvalidPassword, WalletFileException, UserFacingException
+from .util import UserCancelled, InvalidPassword, UserFacingException
 from .simple_config import SimpleConfig
 from .plugin import Plugins, HardwarePluginLibraryUnavailable
 from .logging import Logger
@@ -257,8 +254,8 @@ class BaseWizard(Logger):
             v = keystore.is_master_key
             title = _("Create keystore from a master key")
             message = ' '.join([
-                _("To create a watching-only wallet, please enter your master public key (xpub/ypub/zpub)."),
-                _("To create a spending wallet, please enter a master private key (xprv/yprv/zprv).")
+                _("To create a watching-only wallet, please enter your master public key (xpub)."),
+                _("To create a spending wallet, please enter a master private key (xprv).")
             ])
             self.add_xpub_dialog(title=title, message=message, run_next=self.on_restore_from_key, is_valid=v)
         else:
@@ -416,12 +413,9 @@ class BaseWizard(Logger):
         if self.wallet_type == 'multisig':
             # There is no general standard for HD multisig.
             # For legacy, this is partially compatible with BIP45; assumes index=0
-            # For segwit, a custom path is used, as there is no standard at all.
             default_choice_idx = 2
             choices = [
                 ('standard',   'legacy multisig (p2sh)',            normalize_bip32_derivation("m/45'/0")),
-                ('p2wsh-p2sh', 'p2sh-segwit multisig (p2wsh-p2sh)', purpose48_derivation(0, xtype='p2wsh-p2sh')),
-                ('p2wsh',      'native segwit multisig (p2wsh)',    purpose48_derivation(0, xtype='p2wsh')),
             ]
             # if this is not the first cosigner, pre-select the expected script type,
             # and hide the choices
@@ -435,8 +429,6 @@ class BaseWizard(Logger):
             default_choice_idx = 2
             choices = [
                 ('standard',    'legacy (p2pkh)',            bip44_derivation(0, bip43_purpose=44)),
-                ('p2wpkh-p2sh', 'p2sh-segwit (p2wpkh-p2sh)', bip44_derivation(0, bip43_purpose=49)),
-                ('p2wpkh',      'native segwit (p2wpkh)',    bip44_derivation(0, bip43_purpose=84)),
             ]
         while True:
             try:
@@ -509,7 +501,7 @@ class BaseWizard(Logger):
     def restore_from_seed(self):
         self.opt_bip39 = True
         self.opt_ext = True
-        is_cosigning_seed = lambda x: mnemonic.seed_type(x) in ['standard', 'segwit']
+        is_cosigning_seed = lambda x: mnemonic.seed_type(x) in ['standard']
         test = mnemonic.is_seed if self.wallet_type == 'standard' else is_cosigning_seed
         f = lambda *args: self.run('on_restore_seed', *args)
         self.restore_seed_dialog(run_next=f, test=test)
@@ -519,7 +511,7 @@ class BaseWizard(Logger):
         if self.seed_type == 'bip39':
             f = lambda passphrase: self.run('on_restore_bip39', seed, passphrase)
             self.passphrase_dialog(run_next=f, is_restoring=True) if is_ext else f('')
-        elif self.seed_type in ['standard', 'segwit']:
+        elif self.seed_type in ['standard']:
             f = lambda passphrase: self.run('create_keystore', seed, passphrase)
             self.passphrase_dialog(run_next=f, is_restoring=True) if is_ext else f('')
         elif self.seed_type == 'old':
@@ -567,7 +559,7 @@ class BaseWizard(Logger):
         if has_xpub:
             t1 = xpub_type(k.xpub)
         if self.wallet_type == 'standard':
-            if has_xpub and t1 not in ['standard', 'p2wpkh', 'p2wpkh-p2sh']:
+            if has_xpub and t1 not in ['standard']:
                 self.show_error(_('Wrong key type') + ' %s'%t1)
                 self.run('choose_keystore')
                 return
@@ -690,7 +682,7 @@ class BaseWizard(Logger):
         self.show_xpub_dialog(xpub=xpub, run_next=lambda x: self.run('choose_keystore'))
 
     def choose_seed_type(self):
-        seed_type = 'standard' if self.config.get('nosegwit') else 'segwit'
+        seed_type = 'standard'
         self.create_seed(seed_type)
 
     def create_seed(self, seed_type):

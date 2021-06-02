@@ -40,8 +40,8 @@ def read_json(filename, default):
     return r
 
 
-GIT_REPO_URL = "https://github.com/spesmilo/electrum"
-GIT_REPO_ISSUES_URL = "https://github.com/spesmilo/electrum/issues"
+GIT_REPO_URL = "https://github.com/ciripel/electrum-tent"
+GIT_REPO_ISSUES_URL = "https://github.com/ciripel/electrum-tent/issues"
 BIP39_WALLET_FORMATS = read_json('bip39_wallet_formats.json', [])
 
 
@@ -62,8 +62,8 @@ class BitcoinMainnet(AbstractNet):
 
     TESTNET = False
     WIF_PREFIX = 0x80
-    ADDRTYPE_P2PKH = "1C28"
-    ADDRTYPE_P2SH = "1C2D"
+    ADDRTYPE_P2PKH = bytes.fromhex("1C28")
+    ADDRTYPE_P2SH = bytes.fromhex("1C2D")
     SEGWIT_HRP = "bc"
     GENESIS = "00068b35729d9d2b0c294ff1fe9af0094740524311a131de40e7f705e4c29a5b"
     DEFAULT_PORTS = {'t': '50001', 's': '50002'}
@@ -73,18 +73,10 @@ class BitcoinMainnet(AbstractNet):
 
     XPRV_HEADERS = {
         'standard':    0x0488ade4,  # xprv
-        'p2wpkh-p2sh': 0x049d7878,  # yprv
-        'p2wsh-p2sh':  0x0295b005,  # Yprv
-        'p2wpkh':      0x04b2430c,  # zprv
-        'p2wsh':       0x02aa7a99,  # Zprv
     }
     XPRV_HEADERS_INV = inv_dict(XPRV_HEADERS)
     XPUB_HEADERS = {
         'standard':    0x0488b21e,  # xpub
-        'p2wpkh-p2sh': 0x049d7cb2,  # ypub
-        'p2wsh-p2sh':  0x0295b43f,  # Ypub
-        'p2wpkh':      0x04b24746,  # zpub
-        'p2wsh':       0x02aa7ed3,  # Zpub
     }
     XPUB_HEADERS_INV = inv_dict(XPUB_HEADERS)
     BIP44_COIN_TYPE = 410
@@ -100,8 +92,8 @@ class BitcoinTestnet(AbstractNet):
 
     TESTNET = True
     WIF_PREFIX = 0xEF
-    ADDRTYPE_P2PKH = "1D25"
-    ADDRTYPE_P2SH = "1CBA"
+    ADDRTYPE_P2PKH = bytes.fromhex("1D25")
+    ADDRTYPE_P2SH = bytes.fromhex("1CBA")
     SEGWIT_HRP = "tb"
     GENESIS = "0739bced3341885cf221cf22b5e91cdb0f5da3cb34da982167c4c900723c725a"
     DEFAULT_PORTS = {'t': '51001', 's': '51002'}
@@ -110,18 +102,10 @@ class BitcoinTestnet(AbstractNet):
 
     XPRV_HEADERS = {
         'standard':    0x04358394,  # tprv
-        'p2wpkh-p2sh': 0x044a4e28,  # uprv
-        'p2wsh-p2sh':  0x024285b5,  # Uprv
-        'p2wpkh':      0x045f18bc,  # vprv
-        'p2wsh':       0x02575048,  # Vprv
     }
     XPRV_HEADERS_INV = inv_dict(XPRV_HEADERS)
     XPUB_HEADERS = {
         'standard':    0x043587cf,  # tpub
-        'p2wpkh-p2sh': 0x044a5262,  # upub
-        'p2wsh-p2sh':  0x024289ef,  # Upub
-        'p2wpkh':      0x045f1cf6,  # vpub
-        'p2wsh':       0x02575483,  # Vpub
     }
     XPUB_HEADERS_INV = inv_dict(XPUB_HEADERS)
     BIP44_COIN_TYPE = 1

@@ -411,7 +411,7 @@ class Blockchain(Logger):
         self.write(parent_data, 0)
         parent.write(my_data, (forkpoint - parent.forkpoint)*HEADER_SIZE)
         # swap parameters
-        self.parent, parent.parent = parent.parent, self  # type: Optional[Blockchain], Optional[Blockchain]
+        self.parent, parent.parent = parent.parent, self  # typeof: Optional[Blockchain], Optional[Blockchain]
         self.forkpoint, parent.forkpoint = parent.forkpoint, self.forkpoint
         self._forkpoint_hash, parent._forkpoint_hash = parent._forkpoint_hash, hash_raw_header(bh2u(parent_data[:HEADER_SIZE]))
         self._prev_hash, parent._prev_hash = parent._prev_hash, self._prev_hash

@@ -106,7 +106,7 @@ class BumpFeeStrategy(enum.Enum):
 
 async def _append_utxos_to_inputs(*, inputs: List[PartialTxInput], network: 'Network',
                                   pubkey: str, txin_type: str, imax: int) -> None:
-    if txin_type in ('p2pkh', 'p2wpkh', 'p2wpkh-p2sh'):
+    if txin_type == 'p2pkh':
         address = bitcoin.pubkey_to_address(txin_type, pubkey)
         scripthash = bitcoin.address_to_scripthash(address)
     elif txin_type == 'p2pk':
@@ -129,8 +129,6 @@ async def _append_utxos_to_inputs(*, inputs: List[PartialTxInput], network: 'Net
         txin.script_type = txin_type
         txin.pubkeys = [bfh(pubkey)]
         txin.num_sig = 1
-        if txin_type == 'p2wpkh-p2sh':
-            txin.redeem_script = bfh(bitcoin.p2wpkh_nested_script(pubkey))
         inputs.append(txin)
 
     u = await network.listunspent_for_scripthash(scripthash)
@@ -335,10 +333,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
 
     def has_lightning(self) -> bool:
         return bool(self.lnworker)
-
-    def can_have_lightning(self) -> bool:
-        # we want static_remotekey to be a wallet address
-        return self.txin_type == 'p2wpkh'
 
     def can_have_deterministic_lightning(self) -> bool:
         if not self.can_have_lightning():
@@ -1884,12 +1878,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         # We cannot include UTXO if the prev tx is not signed yet though (chain of unsigned txs),
         # in which case we might include a WITNESS_UTXO.
         address = address or txin.address
-        if txin.witness_utxo is None and txin.is_segwit() and address:
-            received, spent = self.get_addr_io(address)
-            item = received.get(txin.prevout.to_str())
-            if item:
-                txin_value = item[1]
-                txin.witness_utxo = TxOutput.from_address_and_value(address, txin_value)
         if txin.utxo is None:
             txin.utxo = self.get_input_tx(txin.prevout.txid.hex(), ignore_network_issues=ignore_network_issues)
         txin.ensure_there_is_only_one_utxo()
@@ -2541,22 +2529,11 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         # if we have all full previous txs, we *know* all the input amounts -> fine
         if all([txin.utxo for txin in tx.inputs()]):
             return None
-        # a single segwit input -> fine
-        if len(tx.inputs()) == 1 and tx.inputs()[0].is_segwit() and tx.inputs()[0].witness_utxo:
-            return None
         # coinjoin or similar
         if any([not self.is_mine(txin.address) for txin in tx.inputs()]):
             return (_("Warning") + ": "
                     + _("The input amounts could not be verified as the previous transactions are missing.\n"
                         "The amount of money being spent CANNOT be verified."))
-        # some inputs are legacy
-        if any([not txin.is_segwit() for txin in tx.inputs()]):
-            return (_("Warning") + ": "
-                    + _("The fee could not be verified. Signing non-segwit inputs is risky:\n"
-                        "if this transaction was maliciously modified before you sign,\n"
-                        "you might end up paying a higher mining fee than displayed."))
-        # all inputs are segwit
-        # https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-August/014843.html
         return (_("Warning") + ": "
                 + _("If you received this transaction from an untrusted device, "
                     "do not accept to sign it more than once,\n"
@@ -2618,11 +2595,8 @@ class Simple_Wallet(Abstract_Wallet):
 
     def get_redeem_script(self, address: str) -> Optional[str]:
         txin_type = self.get_txin_type(address)
-        if txin_type in ('p2pkh', 'p2wpkh', 'p2pk'):
+        if txin_type == 'p2pkh':
             return None
-        if txin_type == 'p2wpkh-p2sh':
-            pubkey = self.get_public_key(address)
-            return bitcoin.p2wpkh_nested_script(pubkey)
         if txin_type == 'address':
             return None
         raise UnknownTxinType(f'unexpected txin_type {txin_type}')
@@ -2734,7 +2708,7 @@ class Imported_Wallet(Simple_Wallet):
         pubkey = self.get_public_key(address)
         self.db.remove_imported_address(address)
         if pubkey:
-            # delete key iff no other address uses it (e.g. p2pkh and p2wpkh for same key)
+            # delete key iff no other address uses it
             for txin_type in bitcoin.WIF_SCRIPT_TYPES.keys():
                 try:
                     addr2 = bitcoin.pubkey_to_address(txin_type, pubkey)
@@ -2773,7 +2747,7 @@ class Imported_Wallet(Simple_Wallet):
             except Exception as e:
                 bad_keys.append((key, _('invalid private key') + f': {e}'))
                 continue
-            if txin_type not in ('p2pkh', 'p2wpkh', 'p2wpkh-p2sh'):
+            if txin_type != 'p2pkh':
                 bad_keys.append((key, _('not implemented type') + f': {txin_type}'))
                 continue
             addr = bitcoin.pubkey_to_address(txin_type, pubkey)
@@ -2800,7 +2774,7 @@ class Imported_Wallet(Simple_Wallet):
             return
         if txin.script_type in ('unknown', 'address'):
             return
-        elif txin.script_type in ('p2pkh', 'p2wpkh', 'p2wpkh-p2sh'):
+        elif txin.script_type == 'p2pkh':
             pubkey = self.get_public_key(address)
             if not pubkey:
                 return
@@ -3090,10 +3064,6 @@ class Multisig_Wallet(Deterministic_Wallet):
         scriptcode = self.pubkeys_to_scriptcode(pubkeys)
         if txin_type == 'p2sh':
             return scriptcode
-        elif txin_type == 'p2wsh-p2sh':
-            return bitcoin.p2wsh_nested_script(scriptcode)
-        elif txin_type == 'p2wsh':
-            return None
         raise UnknownTxinType(f'unexpected txin_type {txin_type}')
 
     def get_witness_script(self, address):
@@ -3102,8 +3072,6 @@ class Multisig_Wallet(Deterministic_Wallet):
         scriptcode = self.pubkeys_to_scriptcode(pubkeys)
         if txin_type == 'p2sh':
             return None
-        elif txin_type in ('p2wsh-p2sh', 'p2wsh'):
-            return scriptcode
         raise UnknownTxinType(f'unexpected txin_type {txin_type}')
 
     def derive_pubkeys(self, c, i):

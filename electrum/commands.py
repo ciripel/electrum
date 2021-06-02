@@ -1259,7 +1259,7 @@ command_options = {
     'from_coins':  (None, "Source coins (must be in wallet; use sweep to spend from non-wallet address)."),
     'change_addr': ("-c", "Change address. Default is a spare address, or the source address if it's not in the wallet"),
     'nbits':       (None, "Number of bits of entropy"),
-    'seed_type':   (None, "The type of seed to create, e.g. 'standard' or 'segwit'"),
+    'seed_type':   (None, "The type of seed to create, e.g. 'standard'"),
     'language':    ("-L", "Default language for wordlist"),
     'passphrase':  (None, "Seed extension"),
     'privkey':     (None, "Private key. Set to '?' to get a prompt."),
