@@ -70,7 +70,7 @@ class SafeTPlugin(HW_PluginBase):
     minimum_firmware = (1, 0, 5)
     keystore_class = SafeTKeyStore
     minimum_library = (0, 1, 0)
-    SUPPORTED_XTYPES = ('standard', 'p2wpkh-p2sh', 'p2wpkh', 'p2wsh-p2sh', 'p2wsh')
+    SUPPORTED_XTYPES = ('standard')
 
     MAX_LABEL_LEN = 32
 
@@ -274,10 +274,6 @@ class SafeTPlugin(HW_PluginBase):
         return xpub
 
     def get_safet_input_script_type(self, electrum_txin_type: str):
-        if electrum_txin_type in ('p2wpkh', 'p2wsh'):
-            return self.types.InputScriptType.SPENDWITNESS
-        if electrum_txin_type in ('p2wpkh-p2sh', 'p2wsh-p2sh'):
-            return self.types.InputScriptType.SPENDP2SHWITNESS
         if electrum_txin_type in ('p2pkh',):
             return self.types.InputScriptType.SPENDADDRESS
         if electrum_txin_type in ('p2sh',):
@@ -285,10 +281,6 @@ class SafeTPlugin(HW_PluginBase):
         raise ValueError('unexpected txin type: {}'.format(electrum_txin_type))
 
     def get_safet_output_script_type(self, electrum_txin_type: str):
-        if electrum_txin_type in ('p2wpkh', 'p2wsh'):
-            return self.types.OutputScriptType.PAYTOWITNESS
-        if electrum_txin_type in ('p2wpkh-p2sh', 'p2wsh-p2sh'):
-            return self.types.OutputScriptType.PAYTOP2SHWITNESS
         if electrum_txin_type in ('p2pkh',):
             return self.types.OutputScriptType.PAYTOADDRESS
         if electrum_txin_type in ('p2sh',):

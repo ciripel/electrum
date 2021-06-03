@@ -567,7 +567,7 @@ class BaseWizard(Logger):
             self.run('create_wallet')
         elif self.wallet_type == 'multisig':
             assert has_xpub
-            if t1 not in ['standard', 'p2wsh', 'p2wsh-p2sh']:
+            if t1 != 'standard':
                 self.show_error(_('Wrong key type') + ' %s'%t1)
                 self.run('choose_keystore')
                 return

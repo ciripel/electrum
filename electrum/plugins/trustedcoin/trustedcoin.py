@@ -55,7 +55,7 @@ def get_signing_xpub(xtype):
         xpub = "xpub661MyMwAqRbcGnMkaTx2594P9EDuiEqMq25PM2aeG6UmwzaohgA6uDmNsvSUV8ubqwA3Wpste1hg69XHgjUuCD5HLcEp2QPzyV1HMrPppsL"
     else:
         xpub = "tpubD6NzVbkrYhZ4XdmyJQcCPjQfg6RXVUzGFhPjZ7uvRC8JLcS7Hw1i7UTpyhp9grHpak4TyK2hzBJrujDVLXQ6qB5tNpVx9rC6ixijUXadnmY"
-    if xtype not in ('standard', 'p2wsh'):
+    if xtype != 'standard':
         raise NotImplementedError('xtype: {}'.format(xtype))
     if xtype == 'standard':
         return xpub
@@ -426,8 +426,6 @@ def make_billing_address(wallet, num, addr_type):
     pubkey = child_node.eckey.get_public_key_bytes(compressed=True)
     if addr_type == 'legacy':
         return bitcoin.public_key_to_p2pkh(pubkey)
-    elif addr_type == 'segwit':
-        return bitcoin.public_key_to_p2wpkh(pubkey)
     else:
         raise ValueError(f'unexpected billing type: {addr_type}')
 
@@ -564,7 +562,7 @@ class TrustedCoinPlugin(BasePlugin):
     @classmethod
     def get_xkeys(self, seed, t, passphrase, derivation):
         assert is_any_2fa_seed_type(t)
-        xtype = 'standard' if t == '2fa' else 'p2wsh'
+        xtype = 'standard'
         bip32_seed = Mnemonic.mnemonic_to_seed(seed, passphrase)
         rootnode = BIP32Node.from_rootseed(bip32_seed, xtype=xtype)
         child_node = rootnode.subkey_at_private_derivation(derivation)

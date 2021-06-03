@@ -666,7 +666,7 @@ class DigitalBitboxPlugin(HW_PluginBase):
     DEVICE_IDS = [
                    (0x03eb, 0x2402) # Digital Bitbox
                  ]
-    SUPPORTED_XTYPES = ('standard', 'p2wpkh-p2sh', 'p2wpkh', 'p2wsh-p2sh', 'p2wsh')
+    SUPPORTED_XTYPES = ('standard')
 
     def __init__(self, parent, config, name):
         HW_PluginBase.__init__(self, parent, config, name)

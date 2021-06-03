@@ -71,7 +71,7 @@ class KeepKeyPlugin(HW_PluginBase):
     libraries_URL = 'https://github.com/keepkey/python-keepkey'
     minimum_firmware = (1, 0, 0)
     keystore_class = KeepKey_KeyStore
-    SUPPORTED_XTYPES = ('standard', 'p2wpkh-p2sh', 'p2wpkh', 'p2wsh-p2sh', 'p2wsh')
+    SUPPORTED_XTYPES = ('standard')
 
     MAX_LABEL_LEN = 32
 
@@ -304,10 +304,6 @@ class KeepKeyPlugin(HW_PluginBase):
         return xpub
 
     def get_keepkey_input_script_type(self, electrum_txin_type: str):
-        if electrum_txin_type in ('p2wpkh', 'p2wsh'):
-            return self.types.SPENDWITNESS
-        if electrum_txin_type in ('p2wpkh-p2sh', 'p2wsh-p2sh'):
-            return self.types.SPENDP2SHWITNESS
         if electrum_txin_type in ('p2pkh',):
             return self.types.SPENDADDRESS
         if electrum_txin_type in ('p2sh',):
@@ -315,10 +311,6 @@ class KeepKeyPlugin(HW_PluginBase):
         raise ValueError('unexpected txin type: {}'.format(electrum_txin_type))
 
     def get_keepkey_output_script_type(self, electrum_txin_type: str):
-        if electrum_txin_type in ('p2wpkh', 'p2wsh'):
-            return self.types.PAYTOWITNESS
-        if electrum_txin_type in ('p2wpkh-p2sh', 'p2wsh-p2sh'):
-            return self.types.PAYTOP2SHWITNESS
         if electrum_txin_type in ('p2pkh',):
             return self.types.PAYTOADDRESS
         if electrum_txin_type in ('p2sh',):

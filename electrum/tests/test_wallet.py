@@ -223,18 +223,6 @@ class TestCreateRestoreWallet(WalletTestCase):
         wallet.delete_address('bc1qnp78h78vp92pwdwq5xvh8eprlga5q8gu66960c')
         self.assertEqual(1, len(wallet.get_receiving_addresses()))
 
-    def test_restore_wallet_from_text_privkeys(self):
-        text = 'p2wpkh:L4jkdiXszG26SUYvwwJhzGwg37H2nLhrbip7u6crmgNeJysv5FHL p2wpkh:L24GxnN7NNUAfCXA6hFzB1jt59fYAAiFZMcLaJ2ZSawGpM3uqhb1'
-        d = restore_wallet_from_text(text, path=self.wallet_path, config=self.config)
-        wallet = d['wallet']  # type: Imported_Wallet
-        addr0 = wallet.get_receiving_addresses()[0]
-        self.assertEqual('bc1q2ccr34wzep58d4239tl3x3734ttle92a8srmuw', addr0)
-        self.assertEqual('p2wpkh:L4jkdiXszG26SUYvwwJhzGwg37H2nLhrbip7u6crmgNeJysv5FHL',
-                         wallet.export_private_key(addr0, password=None))
-        self.assertEqual(2, len(wallet.get_receiving_addresses()))
-        # also test addr deletion
-        wallet.delete_address('bc1qnp78h78vp92pwdwq5xvh8eprlga5q8gu66960c')
-        self.assertEqual(1, len(wallet.get_receiving_addresses()))
 
 
 class TestWalletPassword(WalletTestCase):
