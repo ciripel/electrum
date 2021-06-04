@@ -188,8 +188,8 @@ class LNInvoice(Invoice):
         return self._lnaddr.paymenthash.hex()
 
     def get_amount_msat(self) -> Optional[int]:
-        amount_btc = self._lnaddr.amount
-        amount = int(amount_btc * COIN * 1000) if amount_btc else None
+        amount_tent = self._lnaddr.amount
+        amount = int(amount_tent * COIN * 1000) if amount_tent else None
         return amount or self.amount_msat
 
     def get_amount_sat(self) -> Union[Decimal, None]:
@@ -223,7 +223,7 @@ class LNInvoice(Invoice):
         d = self.to_json()
         d.update({
             'pubkey': self._lnaddr.pubkey.serialize().hex(),
-            'amount_BTC': str(self._lnaddr.amount),
+            'amount_TENT': str(self._lnaddr.amount),
             'rhash': self._lnaddr.paymenthash.hex(),
             'description': self._lnaddr.get_description(),
             'exp': self._lnaddr.get_expiry(),

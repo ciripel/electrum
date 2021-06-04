@@ -75,18 +75,18 @@ def inv_dict(d):
 ca_path = certifi.where()
 
 
-base_units = {'BTC':8, 'mBTC':5, 'bits':2, 'sat':0}
+base_units = {'TENT':8, 'mTENT':5, 'bits':2, 'sat':0}
 base_units_inverse = inv_dict(base_units)
-base_units_list = ['BTC', 'mBTC', 'bits', 'sat']  # list(dict) does not guarantee order
+base_units_list = ['TENT', 'mTENT', 'bits', 'sat']  # list(dict) does not guarantee order
 
-DECIMAL_POINT_DEFAULT = 5  # mBTC
+DECIMAL_POINT_DEFAULT = 5  # mTENT
 
 
 class UnknownBaseUnit(Exception): pass
 
 
 def decimal_point_to_base_unit_name(dp: int) -> str:
-    # e.g. 8 -> "BTC"
+    # e.g. 8 -> "TENT"
     try:
         return base_units_inverse[dp]
     except KeyError:
@@ -94,7 +94,7 @@ def decimal_point_to_base_unit_name(dp: int) -> str:
 
 
 def base_unit_name_to_decimal_point(unit_name: str) -> int:
-    # e.g. "BTC" -> 8
+    # e.g. "TENT" -> 8
     try:
         return base_units[unit_name]
     except KeyError:
@@ -747,61 +747,15 @@ def time_difference(distance_in_time, include_seconds):
         return "over %d years" % (round(distance_in_minutes / 525600))
 
 mainnet_block_explorers = {
-    'Bitupper Explorer': ('https://bitupper.com/en/explorer/bitcoin/',
-                        {'tx': 'transactions/', 'addr': 'addresses/'}),
-    'Bitflyer.jp': ('https://chainflyer.bitflyer.jp/',
-                        {'tx': 'Transaction/', 'addr': 'Address/'}),
-    'Blockchain.info': ('https://blockchain.com/btc/',
+    'Tent.app': ('https://explorer.tent.app/',
                         {'tx': 'tx/', 'addr': 'address/'}),
-    'blockchainbdgpzk.onion': ('https://blockchainbdgpzk.onion/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'Blockstream.info': ('https://blockstream.info/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'Bitaps.com': ('https://btc.bitaps.com/',
-                        {'tx': '', 'addr': ''}),
-    'BTC.com': ('https://btc.com/',
-                        {'tx': '', 'addr': ''}),
-    'Chain.so': ('https://www.chain.so/',
-                        {'tx': 'tx/BTC/', 'addr': 'address/BTC/'}),
-    'Insight.is': ('https://insight.bitpay.com/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'TradeBlock.com': ('https://tradeblock.com/blockchain/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'BlockCypher.com': ('https://live.blockcypher.com/btc/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'Blockchair.com': ('https://blockchair.com/bitcoin/',
-                        {'tx': 'transaction/', 'addr': 'address/'}),
-    'blockonomics.co': ('https://www.blockonomics.co/',
-                        {'tx': 'api/tx?txid=', 'addr': '#/search?q='}),
-    'mempool.space': ('https://mempool.space/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'mempool.emzy.de': ('https://mempool.emzy.de/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'OXT.me': ('https://oxt.me/',
-                        {'tx': 'transaction/', 'addr': 'address/'}),
-    'smartbit.com.au': ('https://www.smartbit.com.au/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'mynode.local': ('http://mynode.local:3002/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'system default': ('blockchain:/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
+    'Snowgem.org': ('https://explorer.snowgem.org/',
+                         {'tx': 'tx/', 'addr': 'address/'}),
 }
 
 testnet_block_explorers = {
-    'Bitaps.com': ('https://tbtc.bitaps.com/',
-                       {'tx': '', 'addr': ''}),
-    'BlockCypher.com': ('https://live.blockcypher.com/btc-testnet/',
-                       {'tx': 'tx/', 'addr': 'address/'}),
-    'Blockchain.info': ('https://www.blockchain.com/btc-testnet/',
-                       {'tx': 'tx/', 'addr': 'address/'}),
-    'Blockstream.info': ('https://blockstream.info/testnet/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'mempool.space': ('https://mempool.space/testnet/',
-                        {'tx': 'tx/', 'addr': 'address/'}),
-    'smartbit.com.au': ('https://testnet.smartbit.com.au/',
-                       {'tx': 'tx/', 'addr': 'address/'}),
-    'system default': ('blockchain://000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943/',
-                       {'tx': 'tx/', 'addr': 'address/'}),
+    'Tent.app': ('https://testnet-explorer.tent.app/',
+                         {'tx': 'tx/', 'addr': 'address/'}),
 }
 
 _block_explorer_default_api_loc = {'tx': 'tx/', 'addr': 'address/'}
@@ -818,7 +772,7 @@ def block_explorer(config: 'SimpleConfig') -> Optional[str]:
     """
     if config.get('block_explorer_custom') is not None:
         return None
-    default_ = 'Blockstream.info'
+    default_ = 'Tent.app'
     be_key = config.get('block_explorer', default_)
     be_tuple = block_explorer_info().get(be_key)
     if be_tuple is None:
@@ -861,7 +815,7 @@ def block_explorer_URL(config: 'SimpleConfig', kind: str, item: str) -> Optional
 
 
 # note: when checking against these, use .lower() to support case-insensitivity
-BITCOIN_BIP21_URI_SCHEME = 'bitcoin'
+BITCOIN_BIP21_URI_SCHEME = 'tent'
 LIGHTNING_URI_SCHEME = 'lightning'
 
 
@@ -870,7 +824,7 @@ class InvalidBitcoinURI(Exception): pass
 
 # TODO rename to parse_bip21_uri or similar
 def parse_URI(uri: str, on_pr: Callable = None, *, loop=None) -> dict:
-    """Raises InvalidBitcoinURI on malformed URI."""
+    """Raises InvalidTentURI on malformed URI."""
     from . import bitcoin
     from .bitcoin import COIN, TOTAL_COIN_SUPPLY_LIMIT_IN_BTC
 
@@ -879,12 +833,12 @@ def parse_URI(uri: str, on_pr: Callable = None, *, loop=None) -> dict:
 
     if ':' not in uri:
         if not bitcoin.is_address(uri):
-            raise InvalidBitcoinURI("Not a bitcoin address")
+            raise InvalidBitcoinURI("Not a TENT address")
         return {'address': uri}
 
     u = urllib.parse.urlparse(uri)
     if u.scheme.lower() != BITCOIN_BIP21_URI_SCHEME:
-        raise InvalidBitcoinURI("Not a bitcoin URI")
+        raise InvalidBitcoinURI("Not a TENT URI")
     address = u.path
 
     # python for android fails to parse query
@@ -901,7 +855,7 @@ def parse_URI(uri: str, on_pr: Callable = None, *, loop=None) -> dict:
     out = {k: v[0] for k, v in pq.items()}
     if address:
         if not bitcoin.is_address(address):
-            raise InvalidBitcoinURI(f"Invalid bitcoin address: {address}")
+            raise InvalidBitcoinURI(f"Invalid TENT address: {address}")
         out['address'] = address
     if 'amount' in out:
         am = out['amount']
@@ -913,7 +867,7 @@ def parse_URI(uri: str, on_pr: Callable = None, *, loop=None) -> dict:
             else:
                 amount = Decimal(am) * COIN
             if amount > TOTAL_COIN_SUPPLY_LIMIT_IN_BTC * COIN:
-                raise InvalidBitcoinURI(f"amount is out-of-bounds: {amount!r} BTC")
+                raise InvalidBitcoinURI(f"amount is out-of-bounds: {amount!r} TENT")
             out['amount'] = int(amount)
         except Exception as e:
             raise InvalidBitcoinURI(f"failed to parse 'amount' field: {repr(e)}") from e

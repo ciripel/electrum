@@ -465,7 +465,7 @@ class TestPeer(TestCaseForTestnet):
             amount_msat=100_000_000,
             include_routing_hints=False,
     ) -> Tuple[LnAddr, str]:
-        amount_btc = amount_msat/Decimal(COIN*1000)
+        amount_tent = amount_msat/Decimal(COIN*1000)
         payment_preimage = os.urandom(32)
         RHASH = sha256(payment_preimage)
         info = PaymentInfo(RHASH, amount_msat, RECEIVED, PR_UNPAID)
@@ -487,7 +487,7 @@ class TestPeer(TestCaseForTestnet):
             payment_secret = None
         lnaddr1 = LnAddr(
                     paymenthash=RHASH,
-                    amount=amount_btc,
+                    amount=amount_tent,
                     tags=[('c', lnutil.MIN_FINAL_CLTV_EXPIRY_FOR_INVOICE),
                           ('d', 'coffee'),
                           ('9', invoice_features),

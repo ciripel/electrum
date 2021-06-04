@@ -611,7 +611,7 @@ class ElectrumWindow(App, Logger):
         self.fiat_unit = self.fx.ccy if self.fx.is_enabled() else ''
         # default tab
         self.switch_to('history')
-        # bind intent for bitcoin: URI scheme
+        # bind intent for tent: URI scheme
         if platform == 'android':
             from android import activity
             from jnius import autoclass

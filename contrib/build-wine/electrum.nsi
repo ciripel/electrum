@@ -132,7 +132,7 @@ Section
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME} Testnet.lnk" "$INSTDIR\electrum-${PRODUCT_VERSION}.exe" "--testnet" "$INSTDIR\electrum-${PRODUCT_VERSION}.exe" 0
 
 
-  ;Links bitcoin: URI's to Electrum
+  ;Links tent: URI's to Electrum
   WriteRegStr HKCU "Software\Classes\bitcoin" "" "URL:bitcoin Protocol"
   WriteRegStr HKCU "Software\Classes\bitcoin" "URL Protocol" ""
   WriteRegStr HKCU "Software\Classes\bitcoin" "DefaultIcon" "$\"$INSTDIR\electrum.ico, 0$\""
