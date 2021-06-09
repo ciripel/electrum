@@ -487,7 +487,6 @@ class BaseTxDialog(QDialog, MessageBoxMixin):
         self.locktime_final_label.setText(locktime_final_str)
         if self.locktime_e.get_locktime() is None:
             self.locktime_e.set_locktime(self.tx.locktime)
-        self.rbf_label.setText(_('Replace by fee') + f": {not self.tx.is_final()}")
 
         if tx_mined_status.header_hash:
             self.block_hash_label.setText(_("Included in block: {}")
@@ -687,11 +686,6 @@ class BaseTxDialog(QDialog, MessageBoxMixin):
         vbox_right = QVBoxLayout()
         self.size_label = TxDetailLabel()
         vbox_right.addWidget(self.size_label)
-        self.rbf_label = TxDetailLabel()
-        vbox_right.addWidget(self.rbf_label)
-        self.rbf_cb = QCheckBox(_('Replace by fee'))
-        self.rbf_cb.setChecked(bool(self.config.get('use_rbf', True)))
-        vbox_right.addWidget(self.rbf_cb)
 
         self.locktime_final_label = TxDetailLabel()
         vbox_right.addWidget(self.locktime_final_label)
@@ -721,8 +715,6 @@ class BaseTxDialog(QDialog, MessageBoxMixin):
         vbox.addWidget(self.block_hash_label)
 
         # set visibility after parenting can be determined by Qt
-        self.rbf_label.setVisible(self.finalized)
-        self.rbf_cb.setVisible(not self.finalized)
         self.locktime_final_label.setVisible(self.finalized)
         self.locktime_setter_widget.setVisible(not self.finalized)
 
@@ -990,15 +982,14 @@ class PreviewTxDialog(BaseTxDialog, TxEditor):
             return
         assert self.tx
         self.finalized = True
-        self.tx.set_rbf(self.rbf_cb.isChecked())
         locktime = self.locktime_e.get_locktime()
         if locktime is not None:
             self.tx.locktime = locktime
-        for widget in [self.fee_slider, self.fee_combo, self.feecontrol_fields, self.rbf_cb,
+        for widget in [self.fee_slider, self.fee_combo, self.feecontrol_fields,
                        self.locktime_setter_widget, self.locktime_e]:
             widget.setEnabled(False)
             widget.setVisible(False)
-        for widget in [self.rbf_label, self.locktime_final_label]:
+        for widget in [self.locktime_final_label]:
             widget.setVisible(True)
         self.set_title()
         self.set_buttons_visibility()

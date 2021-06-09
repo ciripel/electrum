@@ -116,7 +116,6 @@ def create_claim_tx(
     txin.witness_script = witness_script
     txout = PartialTxOutput.from_address_and_value(address, amount_sat)
     tx = PartialTransaction.from_io([txin], [txout], version=2, locktime=locktime)
-    #tx.set_rbf(True)
     sig = bytes.fromhex(tx.sign_txin(0, privkey))
     witness = [sig, preimage, witness_script]
     txin.witness = bytes.fromhex(construct_witness(witness))
@@ -301,12 +300,11 @@ class SwapManager(Logger):
         # create funding tx
         funding_output = PartialTxOutput.from_address_and_value(lockup_address, onchain_amount)
         if tx is None:
-            tx = self.wallet.create_transaction(outputs=[funding_output], rbf=False, password=password)
+            tx = self.wallet.create_transaction(outputs=[funding_output], password=password)
         else:
             dummy_output = PartialTxOutput.from_address_and_value(ln_dummy_address(), expected_onchain_amount_sat)
             tx.outputs().remove(dummy_output)
             tx.add_outputs([funding_output])
-            tx.set_rbf(False)
             self.wallet.sign_transaction(tx, password)
         # save swap data in wallet in case we need a refund
         swap = SwapData(

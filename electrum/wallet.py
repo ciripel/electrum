@@ -98,12 +98,6 @@ TX_STATUS = [
 ]
 
 
-class BumpFeeStrategy(enum.Enum):
-    COINCHOOSER = enum.auto()
-    DECREASE_CHANGE = enum.auto()
-    DECREASE_PAYMENT = enum.auto()
-
-
 async def _append_utxos_to_inputs(*, inputs: List[PartialTxInput], network: 'Network',
                                   pubkey: str, txin_type: str, imax: int) -> None:
     if txin_type == 'p2pkh':
@@ -200,8 +194,6 @@ async def sweep(
         locktime = get_locktime_for_new_transaction(network)
 
     tx = PartialTransaction.from_io(inputs, outputs, locktime=locktime, version=tx_version)
-    rbf = bool(config.get('use_rbf', True))
-    tx.set_rbf(rbf)
     tx.sign(keypairs)
     return tx
 
@@ -222,18 +214,9 @@ def get_locktime_for_new_transaction(network: 'Network') -> int:
     return locktime
 
 
-
-class CannotBumpFee(Exception):
-    def __str__(self):
-        return _('Cannot bump fee') + ':\n\n' + Exception.__str__(self)
-
 class CannotDoubleSpendTx(Exception):
     def __str__(self):
         return _('Cannot cancel transaction') + ':\n\n' + Exception.__str__(self)
-
-class CannotCPFP(Exception):
-    def __str__(self):
-        return _('Cannot create child transaction') + ':\n\n' + Exception.__str__(self)
 
 class InternalAddressCorruption(Exception):
     def __str__(self):
@@ -246,8 +229,6 @@ class TxWalletDetails(NamedTuple):
     status: str
     label: str
     can_broadcast: bool
-    can_bump: bool
-    can_cpfp: bool
     can_dscancel: bool  # whether user can double-spend to self
     can_save_as_local: bool
     amount: Optional[int]
@@ -593,8 +574,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         fee = tx_wallet_delta.fee
         exp_n = None
         can_broadcast = False
-        can_bump = False
-        can_cpfp = False
         tx_hash = tx.txid()  # note: txid can be None! e.g. when called from GUI tx dialog
         is_lightning_funding_tx = self.is_lightning_funding_tx(tx_hash)
         tx_we_already_have_in_db = self.db.get_transaction(tx_hash)
@@ -624,18 +603,11 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
                         size = tx.estimated_size()
                         fee_per_byte = fee / size
                         exp_n = self.config.fee_to_depth(fee_per_byte)
-                    can_bump = is_any_input_ismine and not tx.is_final()
                     can_dscancel = (is_any_input_ismine and not tx.is_final()
                                     and not all([self.is_mine(txout.address) for txout in tx.outputs()]))
-                    try:
-                        self.cpfp(tx, 0)
-                        can_cpfp = True
-                    except:
-                        can_cpfp = False
                 else:
                     status = _('Local')
                     can_broadcast = self.network is not None
-                    can_bump = is_any_input_ismine and not tx.is_final()
             else:
                 status = _("Signed")
                 can_broadcast = self.network is not None
@@ -653,16 +625,11 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         else:
             amount = None
 
-        if is_lightning_funding_tx:
-            can_bump = False  # would change txid
-
         return TxWalletDetails(
             txid=tx_hash,
             status=status,
             label=label,
             can_broadcast=can_broadcast,
-            can_bump=can_bump,
-            can_cpfp=can_cpfp,
             can_dscancel=can_dscancel,
             can_save_as_local=can_save_as_local,
             amount=amount,
@@ -1179,8 +1146,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
             if not tx:
                 return 2, 'unknown'
             is_final = tx and tx.is_final()
-            if not is_final:
-                extra.append('rbf')
             fee = self.get_tx_fee(tx_hash)
             if fee is not None:
                 size = tx.estimated_size()
@@ -1212,43 +1177,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
 
     def dust_threshold(self):
         return dust_threshold(self.network)
-
-    def get_unconfirmed_base_tx_for_batching(self) -> Optional[Transaction]:
-        candidate = None
-        for hist_item in self.get_history():
-            # tx should not be mined yet
-            if hist_item.tx_mined_status.conf > 0: continue
-            # conservative future proofing of code: only allow known unconfirmed types
-            if hist_item.tx_mined_status.height not in (TX_HEIGHT_UNCONFIRMED,
-                                                        TX_HEIGHT_UNCONF_PARENT,
-                                                        TX_HEIGHT_LOCAL):
-                continue
-            # tx should be "outgoing" from wallet
-            if hist_item.delta >= 0:
-                continue
-            tx = self.db.get_transaction(hist_item.txid)
-            if not tx:
-                continue
-            # is_mine outputs should not be spent yet
-            # to avoid cancelling our own dependent transactions
-            txid = tx.txid()
-            if any([self.is_mine(o.address) and self.db.get_spent_outpoint(txid, output_idx)
-                    for output_idx, o in enumerate(tx.outputs())]):
-                continue
-            # all inputs should be is_mine
-            if not all([self.is_mine(self.get_txin_address(txin)) for txin in tx.inputs()]):
-                continue
-            # do not mutate LN funding txs, as that would change their txid
-            if self.is_lightning_funding_tx(txid):
-                continue
-            # prefer txns already in mempool (vs local)
-            if hist_item.tx_mined_status.height == TX_HEIGHT_LOCAL:
-                candidate = tx
-                continue
-            # tx must have opted-in for RBF
-            if tx.is_final(): continue
-            return tx
-        return candidate
 
     def get_change_addresses_for_new_transaction(
             self, preferred_change_addr=None, *, allow_reuse: bool = True,
@@ -1314,8 +1242,7 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
             outputs: List[PartialTxOutput],
             fee=None,
             change_addr: str = None,
-            is_sweep=False,
-            rbf=False) -> PartialTransaction:
+            is_sweep=False) -> PartialTransaction:
 
         if not coins:  # any bitcoin tx must have at least 1 input by consensus
             raise NotEnoughFunds()
@@ -1352,29 +1279,9 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         if i_max is None:
             # Let the coin chooser select the coins to spend
             coin_chooser = coinchooser.get_coin_chooser(self.config)
-            # If there is an unconfirmed RBF tx, merge with it
-            base_tx = self.get_unconfirmed_base_tx_for_batching()
-            if self.config.get('batch_rbf', False) and base_tx:
-                # make sure we don't try to spend change from the tx-to-be-replaced:
-                coins = [c for c in coins if c.prevout.txid.hex() != base_tx.txid()]
-                is_local = self.get_tx_height(base_tx.txid()).height == TX_HEIGHT_LOCAL
-                base_tx = PartialTransaction.from_tx(base_tx)
-                base_tx.add_info_from_wallet(self)
-                base_tx_fee = base_tx.get_fee()
-                relayfeerate = Decimal(self.relayfee()) / 1000
-                original_fee_estimator = fee_estimator
-                def fee_estimator(size: Union[int, float, Decimal]) -> int:
-                    size = Decimal(size)
-                    lower_bound = base_tx_fee + round(size * relayfeerate)
-                    lower_bound = lower_bound if not is_local else 0
-                    return int(max(lower_bound, original_fee_estimator(size)))
-                txi = base_tx.inputs()
-                txo = list(filter(lambda o: not self.is_change(o.address), base_tx.outputs()))
-                old_change_addrs = [o.address for o in base_tx.outputs() if self.is_change(o.address)]
-            else:
-                txi = []
-                txo = []
-                old_change_addrs = []
+            txi = []
+            txo = []
+            old_change_addrs = []
             # change address. if empty, coin_chooser will set it
             change_addrs = self.get_change_addresses_for_new_transaction(change_addr or old_change_addrs)
             tx = coin_chooser.make_tx(
@@ -1405,7 +1312,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         # Timelock tx to current height.
         tx.locktime = get_locktime_for_new_transaction(self.network)
 
-        tx.set_rbf(rbf)
         tx.add_info_from_wallet(self)
         run_hook('make_unsigned_transaction', self, tx)
         return tx
@@ -1413,15 +1319,14 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
     def mktx(self, *,
              outputs: List[PartialTxOutput],
              password=None, fee=None, change_addr=None,
-             domain=None, rbf=False, nonlocal_only=False,
+             domain=None, nonlocal_only=False,
              tx_version=None, sign=True) -> PartialTransaction:
         coins = self.get_spendable_coins(domain, nonlocal_only=nonlocal_only)
         tx = self.make_unsigned_transaction(
             coins=coins,
             outputs=outputs,
             fee=fee,
-            change_addr=change_addr,
-            rbf=rbf)
+            change_addr=change_addr)
         if tx_version is not None:
             tx.version = tx_version
         if sign:
@@ -1529,284 +1434,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
             max_conf = max(max_conf, tx_age)
         return max_conf >= req_conf
 
-    def bump_fee(
-            self,
-            *,
-            tx: Transaction,
-            txid: str = None,
-            new_fee_rate: Union[int, float, Decimal],
-            coins: Sequence[PartialTxInput] = None,
-            strategies: Sequence[BumpFeeStrategy] = None,
-    ) -> PartialTransaction:
-        """Increase the miner fee of 'tx'.
-        'new_fee_rate' is the target min rate in sat/vbyte
-        'coins' is a list of UTXOs we can choose from as potential new inputs to be added
-        """
-        txid = txid or tx.txid()
-        assert txid
-        assert tx.txid() in (None, txid)
-        if not isinstance(tx, PartialTransaction):
-            tx = PartialTransaction.from_tx(tx)
-        assert isinstance(tx, PartialTransaction)
-        tx.remove_signatures()
-        if tx.is_final():
-            raise CannotBumpFee(_('Transaction is final'))
-        new_fee_rate = quantize_feerate(new_fee_rate)  # strip excess precision
-        try:
-            # note: this might download input utxos over network
-            tx.add_info_from_wallet(self, ignore_network_issues=False)
-        except NetworkException as e:
-            raise CannotBumpFee(repr(e))
-        old_tx_size = tx.estimated_size()
-        old_fee = tx.get_fee()
-        assert old_fee is not None
-        old_fee_rate = old_fee / old_tx_size  # sat/vbyte
-        if new_fee_rate <= old_fee_rate:
-            raise CannotBumpFee(_("The new fee rate needs to be higher than the old fee rate."))
-
-        if not strategies:
-            strategies = [BumpFeeStrategy.COINCHOOSER, BumpFeeStrategy.DECREASE_CHANGE]
-        tx_new = None
-        exc = None
-        for strat in strategies:
-            try:
-                if strat == BumpFeeStrategy.COINCHOOSER:
-                    tx_new = self._bump_fee_through_coinchooser(
-                        tx=tx,
-                        txid=txid,
-                        new_fee_rate=new_fee_rate,
-                        coins=coins,
-                    )
-                elif strat == BumpFeeStrategy.DECREASE_CHANGE:
-                    tx_new = self._bump_fee_through_decreasing_change(
-                        tx=tx, new_fee_rate=new_fee_rate)
-                elif strat == BumpFeeStrategy.DECREASE_PAYMENT:
-                    tx_new = self._bump_fee_through_decreasing_payment(
-                        tx=tx, new_fee_rate=new_fee_rate)
-                else:
-                    raise NotImplementedError(f"unexpected strategy: {strat}")
-            except CannotBumpFee as e:
-                exc = e
-            else:
-                strat_used = strat
-                break
-        if tx_new is None:
-            assert exc
-            raise exc  # all strategies failed, re-raise last exception
-
-        target_min_fee = new_fee_rate * tx_new.estimated_size()
-        actual_fee = tx_new.get_fee()
-        if actual_fee + 1 < target_min_fee:
-            raise CannotBumpFee(
-                f"bump_fee fee target was not met (strategy: {strat_used}). "
-                f"got {actual_fee}, expected >={target_min_fee}. "
-                f"target rate was {new_fee_rate}")
-        tx_new.locktime = get_locktime_for_new_transaction(self.network)
-        tx_new.set_rbf(True)
-        tx_new.add_info_from_wallet(self)
-        return tx_new
-
-    def _bump_fee_through_coinchooser(
-            self,
-            *,
-            tx: PartialTransaction,
-            txid: str,
-            new_fee_rate: Union[int, Decimal],
-            coins: Sequence[PartialTxInput] = None,
-    ) -> PartialTransaction:
-        """Increase the miner fee of 'tx'.
-
-        - keeps all inputs
-        - keeps all not is_mine outputs,
-        - allows adding new inputs
-        """
-        assert txid
-        tx = copy.deepcopy(tx)
-        tx.add_info_from_wallet(self)
-        assert tx.get_fee() is not None
-        old_inputs = list(tx.inputs())
-        old_outputs = list(tx.outputs())
-        # change address
-        old_change_addrs = [o.address for o in old_outputs if self.is_change(o.address)]
-        change_addrs = self.get_change_addresses_for_new_transaction(old_change_addrs)
-        # which outputs to keep?
-        if old_change_addrs:
-            fixed_outputs = list(filter(lambda o: not self.is_change(o.address), old_outputs))
-        else:
-            if all(self.is_mine(o.address) for o in old_outputs):
-                # all outputs are is_mine and none of them are change.
-                # we bail out as it's unclear what the user would want!
-                # the coinchooser bump fee method is probably not a good idea in this case
-                raise CannotBumpFee(_('All outputs are non-change is_mine'))
-            old_not_is_mine = list(filter(lambda o: not self.is_mine(o.address), old_outputs))
-            if old_not_is_mine:
-                fixed_outputs = old_not_is_mine
-            else:
-                fixed_outputs = old_outputs
-        if not fixed_outputs:
-            raise CannotBumpFee(_('Could not figure out which outputs to keep'))
-
-        if coins is None:
-            coins = self.get_spendable_coins(None)
-        # make sure we don't try to spend output from the tx-to-be-replaced:
-        coins = [c for c in coins if c.prevout.txid.hex() != txid]
-        for item in coins:
-            self.add_input_info(item)
-        def fee_estimator(size):
-            return self.config.estimate_fee_for_feerate(fee_per_kb=new_fee_rate*1000, size=size)
-        coin_chooser = coinchooser.get_coin_chooser(self.config)
-        try:
-            return coin_chooser.make_tx(
-                coins=coins,
-                inputs=old_inputs,
-                outputs=fixed_outputs,
-                change_addrs=change_addrs,
-                fee_estimator_vb=fee_estimator,
-                dust_threshold=self.dust_threshold())
-        except NotEnoughFunds as e:
-            raise CannotBumpFee(e)
-
-    def _bump_fee_through_decreasing_change(
-            self,
-            *,
-            tx: PartialTransaction,
-            new_fee_rate: Union[int, Decimal],
-    ) -> PartialTransaction:
-        """Increase the miner fee of 'tx'.
-
-        - keeps all inputs
-        - no new inputs are added
-        - allows decreasing and removing outputs (change is decreased first)
-        This is less "safe" than "coinchooser" method as it might end up decreasing
-        e.g. a payment to a merchant; but e.g. if the user has sent "Max" previously,
-        this is the only way to RBF.
-        """
-        tx = copy.deepcopy(tx)
-        tx.add_info_from_wallet(self)
-        assert tx.get_fee() is not None
-        inputs = tx.inputs()
-        outputs = tx._outputs  # note: we will mutate this directly
-
-        # use own outputs
-        s = list(filter(lambda o: self.is_mine(o.address), outputs))
-        # ... unless there is none
-        if not s:
-            s = outputs
-            x_fee = run_hook('get_tx_extra_fee', self, tx)
-            if x_fee:
-                x_fee_address, x_fee_amount = x_fee
-                s = list(filter(lambda o: o.address != x_fee_address, s))
-        if not s:
-            raise CannotBumpFee('No outputs at all??')
-
-        # prioritize low value outputs, to get rid of dust
-        s = sorted(s, key=lambda o: o.value)
-        for o in s:
-            target_fee = int(math.ceil(tx.estimated_size() * new_fee_rate))
-            delta = target_fee - tx.get_fee()
-            i = outputs.index(o)
-            if o.value - delta >= self.dust_threshold():
-                new_output_value = o.value - delta
-                assert isinstance(new_output_value, int)
-                outputs[i].value = new_output_value
-                delta = 0
-                break
-            else:
-                del outputs[i]
-                # note: we mutated the outputs of tx, which will affect
-                #       tx.estimated_size() in the next iteration
-        if delta > 0:
-            raise CannotBumpFee(_('Could not find suitable outputs'))
-
-        return PartialTransaction.from_io(inputs, outputs)
-
-    def _bump_fee_through_decreasing_payment(
-            self,
-            *,
-            tx: PartialTransaction,
-            new_fee_rate: Union[int, Decimal],
-    ) -> PartialTransaction:
-        """Increase the miner fee of 'tx'.
-
-        - keeps all inputs
-        - no new inputs are added
-        - decreases payment outputs (not change!). Each non-ismine output is decreased
-          proportionally to their byte-size.
-        """
-        tx = copy.deepcopy(tx)
-        tx.add_info_from_wallet(self)
-        assert tx.get_fee() is not None
-        inputs = tx.inputs()
-        outputs = tx.outputs()
-
-        # select non-ismine outputs
-        s = [(idx, out) for (idx, out) in enumerate(outputs)
-             if not self.is_mine(out.address)]
-        # exempt 2fa fee output if present
-        x_fee = run_hook('get_tx_extra_fee', self, tx)
-        if x_fee:
-            x_fee_address, x_fee_amount = x_fee
-            s = [(idx, out) for (idx, out) in s if out.address != x_fee_address]
-        if not s:
-            raise CannotBumpFee("Cannot find payment output")
-
-        del_out_idxs = set()
-        tx_size = tx.estimated_size()
-        cur_fee = tx.get_fee()
-        # Main loop. Each iteration decreases value of all selected outputs.
-        # The number of iterations is bounded by len(s) as only the final iteration
-        # can *not remove* any output.
-        for __ in range(len(s) + 1):
-            target_fee = int(math.ceil(tx_size * new_fee_rate))
-            delta_total = target_fee - cur_fee
-            if delta_total <= 0:
-                break
-            out_size_total = sum(Transaction.estimated_output_size_for_script(out.scriptpubkey.hex())
-                                 for (idx, out) in s if idx not in del_out_idxs)
-            for idx, out in s:
-                out_size = Transaction.estimated_output_size_for_script(out.scriptpubkey.hex())
-                delta = int(math.ceil(delta_total * out_size / out_size_total))
-                if out.value - delta >= self.dust_threshold():
-                    new_output_value = out.value - delta
-                    assert isinstance(new_output_value, int)
-                    outputs[idx].value = new_output_value
-                    cur_fee += delta
-                else:  # remove output
-                    tx_size -= out_size
-                    cur_fee += out.value
-                    del_out_idxs.add(idx)
-        if delta_total > 0:
-            raise CannotBumpFee(_('Could not find suitable outputs'))
-
-        outputs = [out for (idx, out) in enumerate(outputs) if idx not in del_out_idxs]
-        return PartialTransaction.from_io(inputs, outputs)
-
-    def cpfp(self, tx: Transaction, fee: int) -> Optional[PartialTransaction]:
-        txid = tx.txid()
-        for i, o in enumerate(tx.outputs()):
-            address, value = o.address, o.value
-            if self.is_mine(address):
-                break
-        else:
-            raise CannotCPFP(_("Could not find suitable output"))
-        coins = self.get_addr_utxo(address)
-        item = coins.get(TxOutpoint.from_str(txid+':%d'%i))
-        if not item:
-            raise CannotCPFP(_("Could not find coins for output"))
-        inputs = [item]
-        out_address = (self.get_single_change_address_for_new_transaction(allow_reuse=False)
-                       or self.get_unused_address()
-                       or address)
-        output_value = value - fee
-        if output_value < self.dust_threshold():
-            raise CannotCPFP(_("The output value remaining after fee is too low."))
-        outputs = [PartialTxOutput.from_address_and_value(out_address, output_value)]
-        locktime = get_locktime_for_new_transaction(self.network)
-        tx_new = PartialTransaction.from_io(inputs, outputs, locktime=locktime)
-        tx_new.set_rbf(True)
-        tx_new.add_info_from_wallet(self)
-        return tx_new
-
     def dscancel(
             self, *, tx: Transaction, new_fee_rate: Union[int, float, Decimal]
     ) -> PartialTransaction:
@@ -1855,7 +1482,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
             raise CannotDoubleSpendTx(_("The output value remaining after fee is too low."))
         outputs = [PartialTxOutput.from_address_and_value(out_address, value - new_fee)]
         tx_new = PartialTransaction.from_io(inputs, outputs, locktime=locktime)
-        tx_new.set_rbf(True)
         tx_new.add_info_from_wallet(self)
         return tx_new
 
@@ -2491,7 +2117,7 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         pass
 
     def create_transaction(self, outputs, *, fee=None, feerate=None, change_addr=None, domain_addr=None, domain_coins=None,
-              unsigned=False, rbf=None, password=None, locktime=None):
+              unsigned=False, password=None, locktime=None):
         if fee is not None and feerate is not None:
             raise Exception("Cannot specify both 'fee' and 'feerate' at the same time!")
         coins = self.get_spendable_coins(domain_addr)
@@ -2509,9 +2135,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
             change_addr=change_addr)
         if locktime is not None:
             tx.locktime = locktime
-        if rbf is None:
-            rbf = bool(self.config.get('use_rbf', True))
-        tx.set_rbf(rbf)
         if not unsigned:
             self.sign_transaction(tx, password)
         return tx

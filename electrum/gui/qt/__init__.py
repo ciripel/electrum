@@ -354,7 +354,7 @@ class ElectrumGui(Logger):
             path, storage = wizard.select_storage(path, self.daemon.get_wallet)
             # storage is None if file does not exist
             if storage is None:
-                wizard.path = path  # needed by trustedcoin plugin
+                wizard.path = path
                 wizard.run('new')
                 storage, db = wizard.create_storage(path)
             else:

@@ -519,7 +519,6 @@ def create_sweeptx_their_ctx_to_remote(
     if outvalue <= dust_threshold(): return None
     sweep_outputs = [PartialTxOutput.from_address_and_value(sweep_address, outvalue)]
     sweep_tx = PartialTransaction.from_io(sweep_inputs, sweep_outputs)
-    sweep_tx.set_rbf(True)
     sweep_tx.sign({our_payment_pubkey: (our_payment_privkey.get_secret_bytes(), True)})
     if not sweep_tx.is_complete():
         raise Exception('channel close sweep tx is not complete')

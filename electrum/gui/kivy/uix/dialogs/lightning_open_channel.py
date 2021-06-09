@@ -200,7 +200,7 @@ class LightningOpenChannelDialog(Factory.Popup, Logger):
         lnworker = self.app.wallet.lnworker
         coins = self.app.wallet.get_spendable_coins(None, nonlocal_only=True)
         node_id, rest = extract_nodeid(conn_str)
-        make_tx = lambda rbf: lnworker.mktx_for_open_channel(
+        make_tx = lnworker.mktx_for_open_channel(
             coins=coins,
             funding_sat=amount,
             node_id=node_id,

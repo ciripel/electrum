@@ -107,8 +107,6 @@ below are user-visible.
      temporary; the final specification should add fee information in
      the failure messages, so that we will be able to better fine-tune
      trampoline fees.
- * Qt: The increase fee dialog now has advanced options, and offers
-   the choice between different RBF strategies.
  * Watchtowers: The 'use_local_watchtower' feature is deprecated, and
    it has been removed from the Qt GUI. The 'use_remote_watchtower'
    setting has been renamed to 'use_watchtower'.
@@ -182,8 +180,6 @@ below are user-visible.
 # Release 4.0.4 - (Oct 15, 2020)
  * PSBT: fix regression in 4.0.3 where UTXO data was not included in
    QR codes (#6600)
- * new feature: "Cancel tx" (#6641). The Qt/kivy GUI allows cancelling
-   an unconfirmed RBF tx by double-spending its inputs to self.
  * Windows binary:
    - fix some issues with QR scanning by building zbar ourselves (#6593)
    - when using setup exe, also install a debug binary (#6603)
@@ -277,9 +273,6 @@ below are user-visible.
  * Qt GUI: several changes, notably:
    - Separation between output selection and transaction finalization.
    - Coin selection moved to the Coins tab, and it affects all txns,
-     e.g. RBF fee-bumping, LN channel opens, submarine swaps.
-   - Editable tx preview dialog that allows e.g. changing the locktime,
-     toggling RBF, and manual coinjoins.
  * HTTP PayServer: The configuration of a bitcoin-accepting website
    using Electrum has been simplified and requires fewer steps (see
    documentation). The Payserver supports BIP70 and Lightning payments.
@@ -304,8 +297,6 @@ below are user-visible.
 
 # Release 3.3.8 - (July 11, 2019)
 
- * fix some bugs with recent bump fee (RBF) improvements (#5483, #5502)
- * fix #5491: watch-only wallets could not bump fee in some cases
  * appimage: URLs could not be opened on some desktop environments (#5425)
  * faster tx signing for segwit inputs for really large txns (#5494)
  * A few other minor bugfixes and usability improvements.
@@ -315,12 +306,6 @@ below are user-visible.
 
  * The AppImage Linux x86_64 binary and the Windows setup.exe
    (so now all Windows binaries) are now built reproducibly.
- * Bump fee (RBF) improvements:
-   Implemented a new fee-bump strategy that can add new inputs,
-   so now any tx can be fee-bumped (d0a4366). The old strategy
-   was to decrease the value of outputs (starting with change).
-   We will now try the new strategy first, and only use the old
-   as a fallback (needed e.g. when spending "Max").
  * CoinChooser improvements:
    - more likely to construct txs without change (when possible)
    - less likely to construct txs with really small change (e864fa5)
@@ -379,8 +364,6 @@ below are user-visible.
  * Kivy:
    - fix bug with local transactions (#5156)
    - allow selecting fiat rate providers without historical data (#5162)
- * fix CPFP: the fees already paid by the parent were not included in
-   the calculation, so it always overestimated (#5244)
  * Testnet: there is now a warning when the client is started in
    testnet mode as there were a number of reports of users getting
    scammed through social engineering (#5295)
@@ -445,9 +428,6 @@ below are user-visible.
  * New wallet creation defaults to native segwit (bech32).
  * Segwit 2FA: TrustedCoin now supports native segwit p2wsh
    two-factor wallets.
- * RBF batching (opt-in): If the wallet has an unconfirmed RBF
-   transaction, new payments will be added to that transaction,
-   instead of creating new transactions.
  * MacOS: support QR code scanner in binaries.
  * Android APK:
    - build using Google NDK instead of Crystax NDK
@@ -642,9 +622,7 @@ below are user-visible.
  * The 'Send' tab of the Qt GUI displays how transaction fees are
    computed from transaction size.
  * The wallet history can be filtered by time interval.
- * Replace-by-fee is enabled by default. Note that this might cause
-   some issues with wallets that do not display RBF transactions until
-   they are confirmed.
+ * Replace-by-fee is enabled by default.
  * Watching-only wallets and hardware wallets can be encrypted.
  * Semi-automated crash reporting
  * The SSL checkbox option was removed from the GUI.
@@ -792,7 +770,6 @@ issue #3374. Users should upgrade to 3.0.5.
 
 # Release 2.9.3
   * fix configuration file issue #2719
-  * fix ledger signing of non-RBF transactions
   * disable 'spend confirmed only' option by default
 
 # Release 2.9.2
@@ -814,8 +791,7 @@ issue #3374. Users should upgrade to 3.0.5.
     classical SPV model.
   * The desired branch of a blockchain fork can be selected using the
     network dialog. Branches are identified by the hash and height of
-    the diverging block. Coin splitting is possible using RBF
-    transaction (a tutorial will be added).
+    the diverging block.
   * Multibit support: If the user enters a BIP39 seed (or uses a
     hardware wallet), the full derivation path is configurable in the
     install wizard.
@@ -838,7 +814,6 @@ issue #3374. Users should upgrade to 3.0.5.
 
 # Release 2.8.2
   * show paid invoices in history tab
-  * improve CPFP dialog
   * fixes for trezor, keepkey
   * other minor bugfixes
 
@@ -861,8 +836,6 @@ issue #3374. Users should upgrade to 3.0.5.
     contacts files may be imported from the menu.
   * Fees improvements:
     - Dynamic fees are enabled by default.
-    - Child Pays For Parent (CPFP) dialog in the GUI.
-    - RBF is automatically proposed for low fee transactions.
   * Support for Segregated Witness (testnet only).
   * Support for Digital Bitbox hardware wallet.
   * The GUI shows a blue icon when connected using a proxy.
@@ -885,7 +858,6 @@ issue #3374. Users should upgrade to 3.0.5.
 
 # Release 2.7.15
   * Use fee slider for both static and dynamic fees.
-  * Add fee slider to RBF dialog (fix #2083).
   * Simplify fee preferences.
   * Critical: Fix password update issue (#2097). This bug prevents
     password updates in multisig and 2FA wallets. It may also cause
@@ -913,7 +885,6 @@ issue #3374. Users should upgrade to 3.0.5.
 
 # Release 2.7.10
   * various fixes for hardware wallets
-  * improve fee bumping
   * separate sign and broadcast buttons in Qt tx dialog
   * allow spaces in private keys
 
@@ -924,7 +895,6 @@ issue #3374. Users should upgrade to 3.0.5.
   * Fix hardware wallet issues #1975, #1976
 
 # Release 2.7.8
-  * Fix a bug with fee bumping
   * Fix crash when parsing request (issue #1969)
 
 # Release 2.7.7
@@ -988,10 +958,6 @@ issue #3374. Users should upgrade to 3.0.5.
    - Multiple hardware cosigners can be used in the same multisig
      wallet. One icon per keystore is displayed in the satus bar. Each
      connected device will co-sign the transaction.
- * Replace-By-Fee: RBF transactions are supported in both Qt and
-   Android. A warning is displayed in the history for transactions
-   that are replaceable, have unconfirmed parents, or that have very
-   low fees.
  * Dynamic fees: Dynamic fees are enabled by default. A slider allows
    the user to select the expected confirmation time of their
    transaction. The expected confirmation times of incoming

@@ -104,30 +104,6 @@ class SettingsDialog(WindowModalDialog):
         nz.valueChanged.connect(on_nz)
         gui_widgets.append((nz_label, nz))
 
-        use_rbf = bool(self.config.get('use_rbf', True))
-        use_rbf_cb = QCheckBox(_('Use Replace-By-Fee'))
-        use_rbf_cb.setChecked(use_rbf)
-        use_rbf_cb.setToolTip(
-            _('If you check this box, your transactions will be marked as non-final,') + '\n' + \
-            _('and you will have the possibility, while they are unconfirmed, to replace them with transactions that pay higher fees.') + '\n' + \
-            _('Note that some merchants do not accept non-final transactions until they are confirmed.'))
-        def on_use_rbf(x):
-            self.config.set_key('use_rbf', bool(x))
-            batch_rbf_cb.setEnabled(bool(x))
-        use_rbf_cb.stateChanged.connect(on_use_rbf)
-        tx_widgets.append((use_rbf_cb, None))
-
-        batch_rbf_cb = QCheckBox(_('Batch RBF transactions'))
-        batch_rbf_cb.setChecked(bool(self.config.get('batch_rbf', False)))
-        batch_rbf_cb.setEnabled(use_rbf)
-        batch_rbf_cb.setToolTip(
-            _('If you check this box, your unconfirmed transactions will be consolidated into a single transaction.') + '\n' + \
-            _('This will save fees.'))
-        def on_batch_rbf(x):
-            self.config.set_key('batch_rbf', bool(x))
-        batch_rbf_cb.stateChanged.connect(on_batch_rbf)
-        tx_widgets.append((batch_rbf_cb, None))
-
         # lightning
         lightning_widgets = []
 

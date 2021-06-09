@@ -362,7 +362,7 @@ class SendScreen(CScreen, Logger):
         outputs = invoice.outputs
         amount = sum(map(lambda x: x.value, outputs)) if '!' not in [x.value for x in outputs] else '!'
         coins = self.app.wallet.get_spendable_coins(None)
-        make_tx = lambda rbf: self.app.wallet.make_unsigned_transaction(coins=coins, outputs=outputs, rbf=rbf)
+        make_tx = self.app.wallet.make_unsigned_transaction(coins=coins, outputs=outputs)
         on_pay = lambda tx: self.app.protected(_('Send payment?'), self.send_tx, (tx, invoice))
         d = ConfirmTxDialog(self.app, amount=amount, make_tx=make_tx, on_pay=on_pay)
         d.open()

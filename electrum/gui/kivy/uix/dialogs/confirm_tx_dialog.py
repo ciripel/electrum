@@ -136,10 +136,9 @@ class ConfirmTxDialog(FeeSliderDialog, Factory.Popup):
         self.update_tx()
 
     def update_tx(self):
-        rbf = not bool(self.ids.final_cb.active) if self.show_final else False
         try:
             # make unsigned transaction
-            tx = self.make_tx(rbf)
+            tx = self.make_tx()
         except NotEnoughFunds:
             self.warning = _("Not enough funds")
             self.ids.ok_button.disabled = True

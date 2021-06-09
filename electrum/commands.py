@@ -613,7 +613,7 @@ class Commands:
 
     @command('wp')
     async def payto(self, destination, amount, fee=None, feerate=None, from_addr=None, from_coins=None, change_addr=None,
-                    nocheck=False, unsigned=False, rbf=None, password=None, locktime=None, addtransaction=False, wallet: Abstract_Wallet = None):
+                    nocheck=False, unsigned=False, password=None, locktime=None, addtransaction=False, wallet: Abstract_Wallet = None):
         """Create a transaction. """
         self.nocheck = nocheck
         tx_fee = satoshis(fee)
@@ -631,7 +631,6 @@ class Commands:
             domain_addr=domain_addr,
             domain_coins=domain_coins,
             unsigned=unsigned,
-            rbf=rbf,
             password=password,
             locktime=locktime)
         result = tx.serialize()
@@ -641,7 +640,7 @@ class Commands:
 
     @command('wp')
     async def paytomany(self, outputs, fee=None, feerate=None, from_addr=None, from_coins=None, change_addr=None,
-                        nocheck=False, unsigned=False, rbf=None, password=None, locktime=None, addtransaction=False, wallet: Abstract_Wallet = None):
+                        nocheck=False, unsigned=False, password=None, locktime=None, addtransaction=False, wallet: Abstract_Wallet = None):
         """Create a multi-output transaction. """
         self.nocheck = nocheck
         tx_fee = satoshis(fee)
@@ -662,7 +661,6 @@ class Commands:
             domain_addr=domain_addr,
             domain_coins=domain_coins,
             unsigned=unsigned,
-            rbf=rbf,
             password=password,
             locktime=locktime)
         result = tx.serialize()
@@ -1264,7 +1262,6 @@ command_options = {
     'passphrase':  (None, "Seed extension"),
     'privkey':     (None, "Private key. Set to '?' to get a prompt."),
     'unsigned':    ("-u", "Do not sign transaction"),
-    'rbf':         (None, "Whether to signal opt-in Replace-By-Fee in the transaction (true/false)"),
     'locktime':    (None, "Set locktime block number"),
     'addtransaction': (None,'Whether transaction is to be used for broadcasting afterwards. Adds transaction to the wallet'),
     'domain':      ("-D", "List of addresses"),
@@ -1313,7 +1310,6 @@ arg_types = {
     'fee_method': str,
     'fee_level': json_loads,
     'encrypt_file': eval_bool,
-    'rbf': eval_bool,
     'timeout': float,
     'attempts': int,
 }

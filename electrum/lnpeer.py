@@ -710,9 +710,6 @@ class Peer(Logger):
             else:
                 raise Exception('op_return output not found in funding tx')
         # must not be malleable
-        funding_tx.set_rbf(False)
-        if not funding_tx.is_segwit():
-            raise Exception('Funding transaction is not segwit')
         funding_txid = funding_tx.txid()
         assert funding_txid
         funding_index = funding_tx.outputs().index(funding_output)

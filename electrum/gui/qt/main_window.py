@@ -69,9 +69,8 @@ from electrum.invoices import PR_TYPE_ONCHAIN, PR_TYPE_LN, PR_DEFAULT_EXPIRATION
 from electrum.invoices import PR_PAID, PR_FAILED, pr_expiration_values, LNInvoice, OnchainInvoice
 from electrum.transaction import (Transaction, PartialTxInput,
                                   PartialTransaction, PartialTxOutput)
-from electrum.wallet import (Multisig_Wallet, CannotBumpFee, Abstract_Wallet,
-                             sweep_preparations, InternalAddressCorruption,
-                             CannotDoubleSpendTx, CannotCPFP)
+from electrum.wallet import (Multisig_Wallet, Abstract_Wallet,
+                             sweep_preparations, InternalAddressCorruption)
 from electrum.version import ELECTRUM_VERSION
 from electrum.network import (Network, TxBroadcastError, BestEffortRequestFailed,
                               UntrustedServerReturnedError, NetworkException)
@@ -102,7 +101,6 @@ from .update_checker import UpdateCheck, UpdateCheckThread
 from .channels_list import ChannelsList
 from .confirm_tx_dialog import ConfirmTxDialog
 from .transaction_dialog import PreviewTxDialog
-from .rbf_dialog import BumpFeeDialog, DSCancelDialog
 
 if TYPE_CHECKING:
     from . import ElectrumGui
@@ -3286,96 +3284,6 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger):
         vbox.addLayout(Buttons(CloseButton(d)))
         d.exec_()
 
-    def cpfp_dialog(self, parent_tx: Transaction) -> None:
-        new_tx = self.wallet.cpfp(parent_tx, 0)
-        total_size = parent_tx.estimated_size() + new_tx.estimated_size()
-        parent_txid = parent_tx.txid()
-        assert parent_txid
-        parent_fee = self.wallet.get_tx_fee(parent_txid)
-        if parent_fee is None:
-            self.show_error(_("Can't CPFP: unknown fee for parent transaction."))
-            return
-        d = WindowModalDialog(self, _('Child Pays for Parent'))
-        vbox = QVBoxLayout(d)
-        msg = (
-            "A CPFP is a transaction that sends an unconfirmed output back to "
-            "yourself, with a high fee. The goal is to have miners confirm "
-            "the parent transaction in order to get the fee attached to the "
-            "child transaction.")
-        vbox.addWidget(WWLabel(_(msg)))
-        msg2 = ("The proposed fee is computed using your "
-            "fee/kB settings, applied to the total size of both child and "
-            "parent transactions. After you broadcast a CPFP transaction, "
-            "it is normal to see a new unconfirmed transaction in your history.")
-        vbox.addWidget(WWLabel(_(msg2)))
-        grid = QGridLayout()
-        grid.addWidget(QLabel(_('Total size') + ':'), 0, 0)
-        grid.addWidget(QLabel('%d bytes'% total_size), 0, 1)
-        max_fee = new_tx.output_value()
-        grid.addWidget(QLabel(_('Input amount') + ':'), 1, 0)
-        grid.addWidget(QLabel(self.format_amount(max_fee) + ' ' + self.base_unit()), 1, 1)
-        output_amount = QLabel('')
-        grid.addWidget(QLabel(_('Output amount') + ':'), 2, 0)
-        grid.addWidget(output_amount, 2, 1)
-        fee_e = BTCAmountEdit(self.get_decimal_point)
-        combined_fee = QLabel('')
-        combined_feerate = QLabel('')
-        def on_fee_edit(x):
-            fee_for_child = fee_e.get_amount()
-            if fee_for_child is None:
-                return
-            out_amt = max_fee - fee_for_child
-            out_amt_str = (self.format_amount(out_amt) + ' ' + self.base_unit()) if out_amt else ''
-            output_amount.setText(out_amt_str)
-            comb_fee = parent_fee + fee_for_child
-            comb_fee_str = (self.format_amount(comb_fee) + ' ' + self.base_unit()) if comb_fee else ''
-            combined_fee.setText(comb_fee_str)
-            comb_feerate = comb_fee / total_size * 1000
-            comb_feerate_str = self.format_fee_rate(comb_feerate) if comb_feerate else ''
-            combined_feerate.setText(comb_feerate_str)
-        fee_e.textChanged.connect(on_fee_edit)
-        def get_child_fee_from_total_feerate(fee_per_kb: Optional[int]) -> Optional[int]:
-            if fee_per_kb is None:
-                return None
-            fee = fee_per_kb * total_size / 1000 - parent_fee
-            fee = round(fee)
-            fee = min(max_fee, fee)
-            fee = max(total_size, fee)  # pay at least 1 sat/byte for combined size
-            return fee
-        suggested_feerate = self.config.fee_per_kb()
-        fee = get_child_fee_from_total_feerate(suggested_feerate)
-        fee_e.setAmount(fee)
-        grid.addWidget(QLabel(_('Fee for child') + ':'), 3, 0)
-        grid.addWidget(fee_e, 3, 1)
-        def on_rate(dyn, pos, fee_rate):
-            fee = get_child_fee_from_total_feerate(fee_rate)
-            fee_e.setAmount(fee)
-        fee_slider = FeeSlider(self, self.config, on_rate)
-        fee_combo = FeeComboBox(fee_slider)
-        fee_slider.update()
-        grid.addWidget(fee_slider, 4, 1)
-        grid.addWidget(fee_combo, 4, 2)
-        grid.addWidget(QLabel(_('Total fee') + ':'), 5, 0)
-        grid.addWidget(combined_fee, 5, 1)
-        grid.addWidget(QLabel(_('Total feerate') + ':'), 6, 0)
-        grid.addWidget(combined_feerate, 6, 1)
-        vbox.addLayout(grid)
-        vbox.addLayout(Buttons(CancelButton(d), OkButton(d)))
-        if not d.exec_():
-            return
-        fee = fee_e.get_amount()
-        if fee is None:
-            return  # fee left empty, treat is as "cancel"
-        if fee > max_fee:
-            self.show_error(_('Max fee exceeded'))
-            return
-        try:
-            new_tx = self.wallet.cpfp(parent_tx, fee)
-        except CannotCPFP as e:
-            self.show_error(str(e))
-            return
-        self.show_transaction(new_tx)
-
     def _add_info_to_tx_from_wallet_and_network(self, tx: PartialTransaction) -> bool:
         """Returns whether successful."""
         # note side-effect: tx is being mutated
@@ -3391,24 +3299,6 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger):
             self.show_error(repr(e))
             return False
         return True
-
-    def bump_fee_dialog(self, tx: Transaction):
-        txid = tx.txid()
-        if not isinstance(tx, PartialTransaction):
-            tx = PartialTransaction.from_tx(tx)
-        if not self._add_info_to_tx_from_wallet_and_network(tx):
-            return
-        d = BumpFeeDialog(main_window=self, tx=tx, txid=txid)
-        d.run()
-
-    def dscancel_dialog(self, tx: Transaction):
-        txid = tx.txid()
-        if not isinstance(tx, PartialTransaction):
-            tx = PartialTransaction.from_tx(tx)
-        if not self._add_info_to_tx_from_wallet_and_network(tx):
-            return
-        d = DSCancelDialog(main_window=self, tx=tx, txid=txid)
-        d.run()
 
     def save_transaction_into_wallet(self, tx: Transaction):
         win = self.top_level_window()

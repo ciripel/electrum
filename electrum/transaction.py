@@ -1098,7 +1098,7 @@ class PartialTxInput(TxInput, PSBTSection):
     def from_txin(cls, txin: TxInput, *, strip_witness: bool = True) -> 'PartialTxInput':
         # FIXME: if strip_witness is True,
         # res.estimated_size() will return an incorrect value. These methods
-        # will return the correct values after we call add_input_info(). (see dscancel and bump_fee)
+        # will return the correct values after we call add_input_info().
         # This is very fragile: the value returned by estimate_size() depends on the calling order.
         res = PartialTxInput(prevout=txin.prevout,
                              script_sig=None if strip_witness else txin.script_sig,
@@ -1634,12 +1634,6 @@ class PartialTransaction(Transaction):
     def add_outputs(self, outputs: List[PartialTxOutput]) -> None:
         self._outputs.extend(outputs)
         self.BIP69_sort(inputs=False)
-        self.invalidate_ser_cache()
-
-    def set_rbf(self, rbf: bool) -> None:
-        nSequence = 0xffffffff - (2 if rbf else 1)
-        for txin in self.inputs():
-            txin.nsequence = nSequence
         self.invalidate_ser_cache()
 
     def BIP69_sort(self, inputs=True, outputs=True):

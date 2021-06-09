@@ -36,7 +36,6 @@ Builder.load_string('''
     is_mine: True
     can_sign: False
     can_broadcast: False
-    can_rbf: False
     fee_str: ''
     feerate_str: ''
     date_str: ''
@@ -144,7 +143,6 @@ class TxDialog(Factory.Popup):
         self.status_str = tx_details.status
         self.description = tx_details.label
         self.can_broadcast = tx_details.can_broadcast
-        self.can_rbf = tx_details.can_bump
         self.can_dscancel = tx_details.can_dscancel
         self.tx_hash = tx_details.txid or ''
         if tx_mined_status.timestamp:
@@ -191,7 +189,6 @@ class TxDialog(Factory.Popup):
         options = (
             ActionButtonOption(text=_('Sign'), func=lambda btn: self.do_sign(), enabled=self.can_sign),
             ActionButtonOption(text=_('Broadcast'), func=lambda btn: self.do_broadcast(), enabled=self.can_broadcast),
-            ActionButtonOption(text=_('Bump fee'), func=lambda btn: self.do_rbf(), enabled=self.can_rbf),
             ActionButtonOption(text=_('Cancel') + '\n(double-spend)', func=lambda btn: self.do_dscancel(), enabled=self.can_dscancel),
             ActionButtonOption(text=_('Remove'), func=lambda btn: self.remove_local_tx(), enabled=self.can_remove_tx),
         )
@@ -209,46 +206,6 @@ class TxDialog(Factory.Popup):
             self.app.show_error(repr(e))
             return False
         return True
-
-    def do_rbf(self):
-        from .bump_fee_dialog import BumpFeeDialog
-        tx = self.tx
-        txid = tx.txid()
-        assert txid
-        if not isinstance(tx, PartialTransaction):
-            tx = PartialTransaction.from_tx(tx)
-        if not self._add_info_to_tx_from_wallet_and_network(tx):
-            return
-        fee = tx.get_fee()
-        assert fee is not None
-        size = tx.estimated_size()
-        cb = partial(self._do_rbf, tx=tx, txid=txid)
-        d = BumpFeeDialog(self.app, fee, size, cb)
-        d.open()
-
-    def _do_rbf(
-            self,
-            new_fee_rate,
-            is_final,
-            *,
-            tx: PartialTransaction,
-            txid: str,
-    ):
-        if new_fee_rate is None:
-            return
-        try:
-            new_tx = self.wallet.bump_fee(
-                tx=tx,
-                txid=txid,
-                new_fee_rate=new_fee_rate,
-            )
-        except CannotBumpFee as e:
-            self.app.show_error(str(e))
-            return
-        new_tx.set_rbf(not is_final)
-        self.tx = new_tx
-        self.update()
-        self.do_sign()
 
     def do_dscancel(self):
         from .dscancel_dialog import DSCancelDialog

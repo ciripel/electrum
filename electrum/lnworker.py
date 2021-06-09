@@ -1051,7 +1051,6 @@ class LNWallet(LNWorker):
             coins=coins,
             outputs=outputs,
             fee=fee_est)
-        tx.set_rbf(False)
         return tx
 
     def open_channel(self, *, connect_str: str, funding_tx: PartialTransaction,
