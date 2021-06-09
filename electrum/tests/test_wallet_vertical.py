@@ -125,7 +125,7 @@ class TestWalletKeystoreAddressIntegrityForMainnet(ElectrumTestCase):
         seed_words = 'treat dwarf wealth gasp brass outside high rent blood crowd make initial'
         self.assertEqual(keystore.bip39_is_checksum_valid(seed_words), (True, True))
 
-        ks = keystore.from_bip39_seed(seed_words, '', "m/44'/0'/0'")
+        ks = keystore.from_bip39_seed(seed_words, '', "m/44'/410'/0'")
 
         self.assertTrue(isinstance(ks, keystore.BIP32_KeyStore))
 
@@ -143,7 +143,7 @@ class TestWalletKeystoreAddressIntegrityForMainnet(ElectrumTestCase):
         seed_words = 'treat dwarf wealth gasp brass outside high rent blood crowd make initial'
         self.assertEqual(keystore.bip39_is_checksum_valid(seed_words), (True, True))
 
-        ks = keystore.from_bip39_seed(seed_words, UNICODE_HORROR, "m/44'/0'/0'")
+        ks = keystore.from_bip39_seed(seed_words, UNICODE_HORROR, "m/44'/410'/0'")
 
         self.assertTrue(isinstance(ks, keystore.BIP32_KeyStore))
 

@@ -516,7 +516,7 @@ class Test_xprv_xpub(ElectrumTestCase):
         self.assertTrue(is_bip32_derivation("m/0'/1"))
         self.assertTrue(is_bip32_derivation("m/0'/0'"))
         self.assertTrue(is_bip32_derivation("m/3'/-5/8h/"))
-        self.assertTrue(is_bip32_derivation("m/44'/0'/0'/0/0"))
+        self.assertTrue(is_bip32_derivation("m/44'/410'/0'/0/0"))
         self.assertTrue(is_bip32_derivation("m/49'/0'/0'/0/0"))
         self.assertTrue(is_bip32_derivation("m"))
         self.assertTrue(is_bip32_derivation("m/"))
@@ -625,7 +625,7 @@ class Test_xprv_xpub(ElectrumTestCase):
     def test_xtype_from_derivation(self):
         self.assertEqual('standard', xtype_from_derivation("m/44'"))
         self.assertEqual('standard', xtype_from_derivation("m/44'/"))
-        self.assertEqual('standard', xtype_from_derivation("m/44'/0'/0'"))
+        self.assertEqual('standard', xtype_from_derivation("m/44'/410'/0'"))
         self.assertEqual('standard', xtype_from_derivation("m/44'/5241'/221"))
         self.assertEqual('standard', xtype_from_derivation("m/45'"))
         self.assertEqual('standard', xtype_from_derivation("m/45'/56165/271'"))
