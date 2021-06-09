@@ -445,14 +445,6 @@ class BaseTxDialog(QDialog, MessageBoxMixin):
                 and txid is not None and fx.is_enabled() and amount is not None):
             tx_item_fiat = self.wallet.get_tx_item_fiat(
                 tx_hash=txid, amount_sat=abs(amount), fx=fx, tx_fee=fee)
-        lnworker_history = self.wallet.lnworker.get_onchain_history() if self.wallet.lnworker else {}
-        if txid in lnworker_history:
-            item = lnworker_history[txid]
-            ln_amount = item['amount_msat'] / 1000
-            if amount is None:
-                tx_mined_status = self.wallet.lnworker.lnwatcher.get_tx_height(txid)
-        else:
-            ln_amount = None
         self.broadcast_button.setEnabled(tx_details.can_broadcast)
         can_sign = not self.tx.is_complete() and \
             (self.wallet.can_sign(self.tx) or bool(self.external_keypairs))
@@ -496,7 +488,7 @@ class BaseTxDialog(QDialog, MessageBoxMixin):
         else:
             self.block_hash_label.hide()
             self.block_height_label.hide()
-        if amount is None and ln_amount is None:
+        if amount is None:
             amount_str = _("Transaction unrelated to your wallet")
         elif amount is None:
             amount_str = ''
@@ -549,17 +541,6 @@ class BaseTxDialog(QDialog, MessageBoxMixin):
             self.fee_warning_icon.setVisible(bool(risk_of_burning_coins))
         self.fee_label.setText(fee_str)
         self.size_label.setText(size_str)
-        if ln_amount is None or ln_amount == 0:
-            ln_amount_str = ''
-        elif ln_amount > 0:
-            ln_amount_str = _('Amount received in channels') + ': ' + format_amount(ln_amount) + ' ' + base_unit
-        else:
-            assert ln_amount < 0, f"{ln_amount!r}"
-            ln_amount_str = _('Amount withdrawn from channels') + ': ' + format_amount(-ln_amount) + ' ' + base_unit
-        if ln_amount_str:
-            self.ln_amount_label.setText(ln_amount_str)
-        else:
-            self.ln_amount_label.hide()
         show_psbt_only_widgets = self.finalized and isinstance(self.tx, PartialTransaction)
         for widget in self.psbt_only_widgets:
             if isinstance(widget, QMenu):
@@ -656,8 +637,6 @@ class BaseTxDialog(QDialog, MessageBoxMixin):
         vbox_left.addWidget(self.date_label)
         self.amount_label = TxDetailLabel()
         vbox_left.addWidget(self.amount_label)
-        self.ln_amount_label = TxDetailLabel()
-        vbox_left.addWidget(self.ln_amount_label)
 
         fee_hbox = QHBoxLayout()
         self.fee_label = TxDetailLabel()

@@ -31,11 +31,10 @@ from typing import NamedTuple, Sequence, Optional, List, TYPE_CHECKING
 from PyQt5.QtGui import QFontMetrics, QFont
 
 from electrum import bitcoin
-from electrum.util import bfh, maybe_extract_bolt11_invoice, BITCOIN_BIP21_URI_SCHEME
+from electrum.util import bfh, BITCOIN_BIP21_URI_SCHEME
 from electrum.transaction import PartialTxOutput
 from electrum.bitcoin import opcodes, construct_script
 from electrum.logging import Logger
-from electrum.lnaddr import LnDecodeException
 
 from .qrtextedit import ScanQRTextEdit
 from .completion_text_edit import CompletionTextEdit
@@ -162,16 +161,6 @@ class PayToEdit(CompletionTextEdit, ScanQRTextEdit, Logger):
             # try bip21 URI
             if data.lower().startswith(BITCOIN_BIP21_URI_SCHEME + ':'):
                 self.win.pay_to_URI(data)
-                return
-            # try LN invoice
-            bolt11_invoice = maybe_extract_bolt11_invoice(data)
-            if bolt11_invoice is not None:
-                try:
-                    self.win.parse_lightning_invoice(bolt11_invoice)
-                except LnDecodeException as e:
-                    self.errors.append(PayToLineError(line_content=data, exc=e))
-                else:
-                    self.lightning_invoice = bolt11_invoice
                 return
             # try "address, amount" on-chain format
             try:

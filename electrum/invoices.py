@@ -7,7 +7,6 @@ import attr
 from .json_db import StoredObject
 from .i18n import _
 from .util import age, InvoiceError
-from .lnaddr import lndecode, LnAddr
 from . import constants
 from .bitcoin import COIN, TOTAL_COIN_SUPPLY_LIMIT_IN_BTC
 from .transaction import PartialTxOutput
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
 
 # types of payment requests
 PR_TYPE_ONCHAIN = 0
-PR_TYPE_LN = 2
 
 # status of payment requests
 PR_UNPAID   = 0
@@ -87,9 +85,6 @@ class Invoice(StoredObject):
     exp: int
     time: int
 
-    def is_lightning(self):
-        return self.type == PR_TYPE_LN
-
     def get_status_str(self, status):
         status_str = pr_tooltips[status]
         if status == PR_UNPAID:
@@ -105,10 +100,7 @@ class Invoice(StoredObject):
     @classmethod
     def from_json(cls, x: dict) -> 'Invoice':
         # note: these raise if x has extra fields
-        if x.get('type') == PR_TYPE_LN:
-            return LNInvoice(**x)
-        else:
-            return OnchainInvoice(**x)
+        return OnchainInvoice(**x)
 
 
 @attr.s
@@ -155,79 +147,3 @@ class OnchainInvoice(Invoice):
             requestor=pr.get_requestor(),
             height=height,
         )
-
-@attr.s
-class LNInvoice(Invoice):
-    invoice = attr.ib(type=str)
-    amount_msat = attr.ib(kw_only=True)  # type: Optional[int]  # needed for zero amt invoices
-
-    __lnaddr = None
-
-    @invoice.validator
-    def _validate_invoice_str(self, attribute, value):
-        lndecode(value)  # this checks the str can be decoded
-
-    @amount_msat.validator
-    def _validate_amount(self, attribute, value):
-        if value is None:
-            return
-        if isinstance(value, int):
-            if not (0 <= value <= TOTAL_COIN_SUPPLY_LIMIT_IN_BTC * COIN * 1000):
-                raise InvoiceError(f"amount is out-of-bounds: {value!r} msat")
-        else:
-            raise InvoiceError(f"unexpected amount: {value!r}")
-
-    @property
-    def _lnaddr(self) -> LnAddr:
-        if self.__lnaddr is None:
-            self.__lnaddr = lndecode(self.invoice)
-        return self.__lnaddr
-
-    @property
-    def rhash(self) -> str:
-        return self._lnaddr.paymenthash.hex()
-
-    def get_amount_msat(self) -> Optional[int]:
-        amount_tent = self._lnaddr.amount
-        amount = int(amount_tent * COIN * 1000) if amount_tent else None
-        return amount or self.amount_msat
-
-    def get_amount_sat(self) -> Union[Decimal, None]:
-        amount_msat = self.get_amount_msat()
-        if amount_msat is None:
-            return None
-        return Decimal(amount_msat) / 1000
-
-    @property
-    def exp(self) -> int:
-        return self._lnaddr.get_expiry()
-
-    @property
-    def time(self) -> int:
-        return self._lnaddr.date
-
-    @property
-    def message(self) -> str:
-        return self._lnaddr.get_description()
-
-    @classmethod
-    def from_bech32(cls, invoice: str) -> 'LNInvoice':
-        amount_msat = lndecode(invoice).get_amount_msat()
-        return LNInvoice(
-            type=PR_TYPE_LN,
-            invoice=invoice,
-            amount_msat=amount_msat,
-        )
-
-    def to_debug_json(self) -> Dict[str, Any]:
-        d = self.to_json()
-        d.update({
-            'pubkey': self._lnaddr.pubkey.serialize().hex(),
-            'amount_TENT': str(self._lnaddr.amount),
-            'rhash': self._lnaddr.paymenthash.hex(),
-            'description': self._lnaddr.get_description(),
-            'exp': self._lnaddr.get_expiry(),
-            'time': self._lnaddr.date,
-            # 'tags': str(lnaddr.tags),
-        })
-        return d

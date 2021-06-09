@@ -32,7 +32,6 @@ from PyQt5.QtCore import Qt, QItemSelectionModel, QModelIndex
 
 from electrum.i18n import _
 from electrum.util import format_time
-from electrum.invoices import PR_TYPE_ONCHAIN, PR_TYPE_LN, LNInvoice, OnchainInvoice
 from electrum.plugin import run_hook
 from electrum.invoices import Invoice
 

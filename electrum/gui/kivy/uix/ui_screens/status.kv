@@ -3,12 +3,10 @@ Popup:
     confirmed: 0
     unconfirmed: 0
     unmatured: 0
-    lightning: 0
     watching_only: app.wallet.is_watching_only()
     has_seed: app.wallet.has_seed()
     on_parent:
         self.confirmed, self.unconfirmed, self.unmatured = app.wallet.get_balance()
-        self.lightning = int(app.wallet.lnworker.get_balance()) if app.wallet.lnworker else 0
     BoxLayout:
         orientation: 'vertical'
         ScrollView:

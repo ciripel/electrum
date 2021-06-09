@@ -313,37 +313,3 @@ if [[ $1 == "breach_with_spent_htlc" ]]; then
     wait_for_balance bob 0.039
     $bob getbalance
 fi
-
-
-if [[ $1 == "configure_test_watchtower" ]]; then
-    # carol is the watchtower of bob
-    $carol setconfig -o run_watchtower true
-    $carol setconfig -o watchtower_user wtuser
-    $carol setconfig -o watchtower_password wtpassword
-    $carol setconfig -o watchtower_address 127.0.0.1:12345
-    $bob setconfig -o watchtower_url http://wtuser:wtpassword@127.0.0.1:12345
-fi
-
-if [[ $1 == "watchtower" ]]; then
-    wait_for_balance alice 1
-    echo "alice opens channel"
-    bob_node=$($bob nodeid)
-    channel=$($alice open_channel $bob_node 0.15)
-    echo "channel outpoint: $channel"
-    new_blocks 3
-    wait_until_channel_open alice
-    echo "alice pays bob"
-    invoice1=$($bob add_lightning_request 0.01 -m "invoice1" | jq -r ".invoice")
-    $alice lnpay $invoice1
-    ctx=$($alice get_channel_ctx $channel --iknowwhatimdoing)
-    echo "alice pays bob again"
-    invoice2=$($bob add_lightning_request 0.01 -m "invoice2" | jq -r ".invoice")
-    $alice lnpay $invoice2
-    msg="waiting until watchtower is synchronized"
-    while watchtower_ctn=$($carol get_watchtower_ctn $channel) && [ $watchtower_ctn != "3" ]; do
-        sleep 1
-	msg="$msg."
-	printf "$msg\r"
-    done
-    printf "\n"
-fi

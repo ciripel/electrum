@@ -148,8 +148,7 @@ class HistoryNode(CustomNode):
                 HistoryColumns.DESCRIPTION:
                     tx_item['label'] if 'label' in tx_item else None,
                 HistoryColumns.AMOUNT:
-                    (tx_item['bc_value'].value if 'bc_value' in tx_item else 0)\
-                    + (tx_item['ln_value'].value if 'ln_value' in tx_item else 0),
+                    (tx_item['bc_value'].value if 'bc_value' in tx_item else 0),
                 HistoryColumns.BALANCE:
                     (tx_item['balance'].value if 'balance' in tx_item else 0),
                 HistoryColumns.FIAT_VALUE:
@@ -202,8 +201,7 @@ class HistoryNode(CustomNode):
             return QVariant(tx_item['label'])
         elif col == HistoryColumns.AMOUNT:
             bc_value = tx_item['bc_value'].value if 'bc_value' in tx_item else 0
-            ln_value = tx_item['ln_value'].value if 'ln_value' in tx_item else 0
-            value = bc_value + ln_value
+            value = bc_value
             v_str = window.format_amount(value, is_diff=True, whitespaces=True)
             return QVariant(v_str)
         elif col == HistoryColumns.BALANCE:
@@ -304,7 +302,6 @@ class HistoryModel(CustomModel, Logger):
                         parent.addChild(node1)
                         parent._data['label'] = child_data.get('group_label')
                         parent._data['bc_value'] = child_data.get('bc_value', Satoshis(0))
-                        parent._data['ln_value'] = child_data.get('ln_value', Satoshis(0))
                     # add child to parent
                     parent.addChild(node)
                     # update parent data
@@ -314,8 +311,6 @@ class HistoryModel(CustomModel, Logger):
                         parent._data['label'] = tx_item['group_label']
                     if 'bc_value' in tx_item:
                         parent._data['bc_value'] += tx_item['bc_value']
-                    if 'ln_value' in tx_item:
-                        parent._data['ln_value'] += tx_item['ln_value']
                     if 'fiat_value' in tx_item:
                         parent._data['fiat_value'] += tx_item['fiat_value']
                     if tx_item.get('txid') == group_id:
@@ -707,17 +702,10 @@ class HistoryList(MyTreeView, AcceptFileDragDrop):
             cc = self.add_copy_menu(menu, idx)
             cc.addAction(_("Payment Hash"), lambda: self.place_text_on_clipboard(tx_item['payment_hash'], title="Payment Hash"))
             cc.addAction(_("Preimage"), lambda: self.place_text_on_clipboard(tx_item['preimage'], title="Preimage"))
-            key = tx_item['payment_hash']
-            log = self.wallet.lnworker.logs.get(key)
-            if log:
-                menu.addAction(_("View log"), lambda: self.parent.invoice_list.show_log(key, log))
             menu.exec_(self.viewport().mapToGlobal(position))
             return
         tx_hash = tx_item['txid']
-        if tx_item.get('lightning'):
-            tx = self.wallet.lnworker.lnwatcher.db.get_transaction(tx_hash)
-        else:
-            tx = self.wallet.db.get_transaction(tx_hash)
+        tx = self.wallet.db.get_transaction(tx_hash)
         if not tx:
             return
         tx_URL = block_explorer_URL(self.config, 'tx', tx_hash)

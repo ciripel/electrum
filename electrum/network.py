@@ -56,10 +56,6 @@ from .i18n import _
 from .logging import get_logger, Logger
 
 if TYPE_CHECKING:
-    from .channel_db import ChannelDB
-    from .lnrouter import LNPathFinder
-    from .lnworker import LNGossip
-    from .lnwatcher import WatchTower
     from .daemon import Daemon
 
 
@@ -246,11 +242,6 @@ class Network(Logger, NetworkRetryManager[ServerAddr]):
     default_server: ServerAddr
     _recent_servers: List[ServerAddr]
 
-    channel_db: Optional['ChannelDB'] = None
-    lngossip: Optional['LNGossip'] = None
-    local_watchtower: Optional['WatchTower'] = None
-    path_finder: Optional['LNPathFinder'] = None
-
     def __init__(self, config: SimpleConfig, *, daemon: 'Daemon' = None):
         global _INSTANCE
         assert _INSTANCE is None, "Network is a singleton!"
@@ -341,42 +332,9 @@ class Network(Logger, NetworkRetryManager[ServerAddr]):
         self._set_status('disconnected')
         self._has_ever_managed_to_connect_to_server = False
 
-        # lightning network
-        if self.config.get('run_watchtower', False):
-            from . import lnwatcher
-            self.local_watchtower = lnwatcher.WatchTower(self)
-            self.local_watchtower.start_network(self)
-            asyncio.ensure_future(self.local_watchtower.start_watching())
-
     def has_internet_connection(self) -> bool:
         """Our guess whether the device has Internet-connectivity."""
         return self._has_ever_managed_to_connect_to_server
-
-    def has_channel_db(self):
-        return self.channel_db is not None
-
-    def start_gossip(self):
-        from . import lnrouter
-        from . import channel_db
-        from . import lnworker
-        if not self.config.get('use_gossip'):
-            return
-        if self.lngossip is None:
-            self.channel_db = channel_db.ChannelDB(self)
-            self.path_finder = lnrouter.LNPathFinder(self.channel_db)
-            self.channel_db.load_data()
-            self.lngossip = lnworker.LNGossip()
-            self.lngossip.start_network(self)
-
-    async def stop_gossip(self, *, full_shutdown: bool = False):
-        if self.lngossip:
-            await self.lngossip.stop()
-            self.lngossip = None
-            self.channel_db.stop()
-            if full_shutdown:
-                await self.channel_db.stopped_event.wait()
-            self.channel_db = None
-            self.path_finder = None
 
     def run_from_another_thread(self, coro, *, timeout=None):
         assert self._loop_thread != threading.current_thread(), 'must not be called from network thread'
@@ -1214,24 +1172,6 @@ class Network(Logger, NetworkRetryManager[ServerAddr]):
         """
         self._jobs = jobs or []
         asyncio.run_coroutine_threadsafe(self._start(), self.asyncio_loop)
-
-    @log_exceptions
-    async def stop(self, *, full_shutdown: bool = True):
-        self.logger.info("stopping network")
-        # timeout: if full_shutdown, it is up to the caller to time us out,
-        #          otherwise if e.g. restarting due to proxy changes, we time out fast
-        async with (nullcontext() if full_shutdown else ignore_after(1)):
-            async with TaskGroup() as group:
-                await group.spawn(self.taskgroup.cancel_remaining())
-                if full_shutdown:
-                    await group.spawn(self.stop_gossip(full_shutdown=full_shutdown))
-        self.taskgroup = None
-        self.interface = None
-        self.interfaces = {}
-        self._connecting_ifaces.clear()
-        self._closing_ifaces.clear()
-        if not full_shutdown:
-            util.trigger_callback('network_updated')
 
     async def _ensure_there_is_a_main_interface(self):
         if self.is_connected():

@@ -4,7 +4,6 @@ from typing import List, Tuple, Optional, Sequence, Dict, TYPE_CHECKING
 from collections import defaultdict
 
 from .util import profiler
-from .lnutil import NoPathFound
 
 PART_PENALTY = 1.0  # 1.0 results in avoiding splits
 MIN_PART_MSAT = 10_000_000  # we don't want to split indefinitely
@@ -79,8 +78,6 @@ def create_starting_split_hierarchy(amount_msat: int, channels_with_funds: Dict[
                 amt = min(s, amount_to_add)
                 configuration[c] = amt
                 amount_added += amt
-        if amount_added != amount_msat:
-            raise NoPathFound("Channels don't have enough sending capacity.")
         split_hierarchy[number_nonzero_parts(configuration)].append(configuration)
 
     return unique_hierarchy(split_hierarchy)

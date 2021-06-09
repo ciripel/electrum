@@ -37,13 +37,9 @@ from .invoices import PR_TYPE_ONCHAIN, Invoice
 from .keystore import bip44_derivation
 from .transaction import Transaction, TxOutpoint, tx_from_any, PartialTransaction, PartialTxOutput
 from .logging import Logger
-from .lnutil import LOCAL, REMOTE, FeeUpdate, UpdateAddHtlc, LocalConfig, RemoteConfig, Keypair, OnlyPubkeyKeypair, RevocationStore
-from .lnutil import ImportedChannelBackupStorage, OnchainChannelBackupStorage
-from .lnutil import ChannelConstraints, Outpoint, ShachainElement
 from .json_db import StoredDict, JsonDB, locked, modifier
 from .plugin import run_hook, plugin_loaders
 from .paymentrequest import PaymentRequest
-from .submarine_swaps import SwapData
 
 if TYPE_CHECKING:
     from .storage import WalletStorage
@@ -659,7 +655,7 @@ class WalletDB(JsonDB):
         if not self._is_upgrade_method_needed(29, 29):
             return
 
-        from .invoices import PR_TYPE_ONCHAIN, PR_TYPE_LN
+        from .invoices import PR_TYPE_ONCHAIN
         requests = self.data.get('payment_requests', {})
         invoices = self.data.get('invoices', {})
         for d in [invoices, requests]:
@@ -667,13 +663,6 @@ class WalletDB(JsonDB):
                 _type = item['type']
                 if _type == PR_TYPE_ONCHAIN:
                     item['amount_sat'] = item.pop('amount')
-                elif _type == PR_TYPE_LN:
-                    amount_sat = item.pop('amount')
-                    item['amount_msat'] = 1000 * amount_sat if amount_sat is not None else None
-                    item.pop('exp')
-                    item.pop('message')
-                    item.pop('rhash')
-                    item.pop('time')
                 else:
                     raise Exception(f"unknown invoice type: {_type}")
         self.data['seed_version'] = 30
@@ -760,7 +749,6 @@ class WalletDB(JsonDB):
         if not self._is_upgrade_method_needed(37, 37):
             return
         PR_TYPE_ONCHAIN = 0
-        PR_TYPE_LN = 2
         from .bitcoin import TOTAL_COIN_SUPPLY_LIMIT_IN_BTC, COIN
         max_sats = TOTAL_COIN_SUPPLY_LIMIT_IN_BTC * COIN
         requests = self.data.get('payment_requests', {})
@@ -772,12 +760,6 @@ class WalletDB(JsonDB):
                     if amount_sat == '!':
                         continue
                     if not (isinstance(amount_sat, int) and 0 <= amount_sat <= max_sats):
-                        del d[key]
-                elif item['type'] == PR_TYPE_LN:
-                    amount_msat = item['amount_msat']
-                    if not amount_msat:
-                        continue
-                    if not (isinstance(amount_msat, int) and 0 <= amount_msat <= max_sats * 1000):
                         del d[key]
         self.data['seed_version'] = 38
 
@@ -1300,36 +1282,14 @@ class WalletDB(JsonDB):
             v = dict((k, Invoice.from_json(x)) for k, x in v.items())
         if key == 'payment_requests':
             v = dict((k, Invoice.from_json(x)) for k, x in v.items())
-        elif key == 'adds':
-            v = dict((k, UpdateAddHtlc.from_tuple(*x)) for k, x in v.items())
-        elif key == 'fee_updates':
-            v = dict((k, FeeUpdate(**x)) for k, x in v.items())
-        elif key == 'submarine_swaps':
-            v = dict((k, SwapData(**x)) for k, x in v.items())
-        elif key == 'imported_channel_backups':
-            v = dict((k, ImportedChannelBackupStorage(**x)) for k, x in v.items())
-        elif key == 'onchain_channel_backups':
-            v = dict((k, OnchainChannelBackupStorage(**x)) for k, x in v.items())
         elif key == 'tx_fees':
             v = dict((k, TxFeesValue(*x)) for k, x in v.items())
         elif key == 'prevouts_by_scripthash':
             v = dict((k, {(prevout, value) for (prevout, value) in x}) for k, x in v.items())
-        elif key == 'buckets':
-            v = dict((k, ShachainElement(bfh(x[0]), int(x[1]))) for k, x in v.items())
         elif key == 'data_loss_protect_remote_pcp':
             v = dict((k, bfh(x)) for k, x in v.items())
         return v
 
-    def _convert_value(self, path, key, v):
-        if key == 'local_config':
-            v = LocalConfig(**v)
-        elif key == 'remote_config':
-            v = RemoteConfig(**v)
-        elif key == 'constraints':
-            v = ChannelConstraints(**v)
-        elif key == 'funding_outpoint':
-            v = Outpoint(**v)
-        return v
 
     def _should_convert_to_stored_dict(self, key) -> bool:
         if key == 'keystore':

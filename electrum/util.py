@@ -242,9 +242,6 @@ class MyEncoder(json.JSONEncoder):
     def default(self, obj):
         # note: this does not get called for namedtuples :(  https://bugs.python.org/issue30343
         from .transaction import Transaction, TxOutput
-        from .lnutil import UpdateAddHtlc
-        if isinstance(obj, UpdateAddHtlc):
-            return obj.to_tuple()
         if isinstance(obj, Transaction):
             return obj.serialize()
         if isinstance(obj, TxOutput):
@@ -816,7 +813,6 @@ def block_explorer_URL(config: 'SimpleConfig', kind: str, item: str) -> Optional
 
 # note: when checking against these, use .lower() to support case-insensitivity
 BITCOIN_BIP21_URI_SCHEME = 'tent'
-LIGHTNING_URI_SCHEME = 'lightning'
 
 
 class InvalidBitcoinURI(Exception): pass
@@ -936,16 +932,6 @@ def create_bip21_uri(addr, amount_sat: Optional[int], message: Optional[str],
         fragment='',
     )
     return str(urllib.parse.urlunparse(p))
-
-
-def maybe_extract_bolt11_invoice(data: str) -> Optional[str]:
-    data = data.strip()  # whitespaces
-    data = data.lower()
-    if data.startswith(LIGHTNING_URI_SCHEME + ':ln'):
-        data = data[10:]
-    if data.startswith('ln'):
-        return data
-    return None
 
 
 # Python bug (http://bugs.python.org/issue1927) causes raw_input

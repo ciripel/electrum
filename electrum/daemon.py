@@ -284,34 +284,6 @@ class CommandsServer(AuthenticatedServer):
         return result
 
 
-class WatchTowerServer(AuthenticatedServer):
-
-    def __init__(self, network, netaddress):
-        self.addr = netaddress
-        self.config = network.config
-        self.network = network
-        watchtower_user = self.config.get('watchtower_user', '')
-        watchtower_password = self.config.get('watchtower_password', '')
-        AuthenticatedServer.__init__(self, watchtower_user, watchtower_password)
-        self.lnwatcher = network.local_watchtower
-        self.app = web.Application()
-        self.app.router.add_post("/", self.handle)
-        self.register_method(self.get_ctn)
-        self.register_method(self.add_sweep_tx)
-
-    async def run(self):
-        self.runner = web.AppRunner(self.app)
-        await self.runner.setup()
-        site = web.TCPSite(self.runner, host=str(self.addr.host), port=self.addr.port, ssl_context=self.config.get_ssl_context())
-        await site.start()
-
-    async def get_ctn(self, *args):
-        return await self.lnwatcher.sweepstore.get_ctn(*args)
-
-    async def add_sweep_tx(self, *args):
-        return await self.lnwatcher.sweepstore.add_sweep_tx(*args)
-
-
 class PayServer(Logger):
 
     def __init__(self, daemon: 'Daemon', netaddress):
@@ -346,20 +318,6 @@ class PayServer(Logger):
         await runner.setup()
         site = web.TCPSite(runner, host=str(self.addr.host), port=self.addr.port, ssl_context=self.config.get_ssl_context())
         await site.start()
-
-    async def create_request(self, request):
-        params = await request.post()
-        wallet = self.wallet
-        if 'amount_sat' not in params or not params['amount_sat'].isdigit():
-            raise web.HTTPUnsupportedMediaType()
-        amount = int(params['amount_sat'])
-        message = params['message'] or "donation"
-        payment_hash = wallet.lnworker.add_request(
-            amount_sat=amount,
-            message=message,
-            expiry=3600)
-        key = payment_hash.hex()
-        raise web.HTTPFound(self.root + '/pay?id=' + key)
 
     async def get_request(self, r):
         key = r.query_string
@@ -441,17 +399,8 @@ class Daemon(Logger):
         if not config.get('offline') and payserver_address:
             self.pay_server = PayServer(self, payserver_address)
             daemon_jobs.append(self.pay_server.run())
-        # server-side watchtower
-        self.watchtower = None
-        watchtower_address = self.config.get_netaddress('watchtower_address')
-        if not config.get('offline') and watchtower_address:
-            self.watchtower = WatchTowerServer(self.network, watchtower_address)
-            daemon_jobs.append(self.watchtower.run)
         if self.network:
             self.network.start(jobs=[self.fx.run])
-            # prepare lightning functionality, also load channel db early
-            if self.config.get('use_gossip', False):
-                self.network.start_gossip()
 
         self.stopping_soon = threading.Event()
         self.stopped_event = asyncio.Event()
@@ -555,8 +504,6 @@ class Daemon(Logger):
                 self.logger.info("stopping network and taskgroup")
                 async with ignore_after(2):
                     async with TaskGroup() as group:
-                        if self.network:
-                            await group.spawn(self.network.stop(full_shutdown=True))
                         await group.spawn(self.taskgroup.cancel_remaining())
 
             fut = asyncio.run_coroutine_threadsafe(stop_async(), self.asyncio_loop)

@@ -7,8 +7,8 @@ from kivy.app import App
 from kivy.clock import Clock
 
 from electrum.gui.kivy.i18n import _
-from electrum.invoices import pr_tooltips, pr_color
-from electrum.invoices import PR_UNKNOWN, PR_UNPAID, PR_FAILED, PR_TYPE_LN
+from electrum.invoices import pr_color
+from electrum.invoices import PR_UNKNOWN, PR_UNPAID
 
 if TYPE_CHECKING:
     from ...main_window import ElectrumWindow
@@ -114,10 +114,7 @@ class RequestDialog(Factory.Popup):
         self.status = self.app.wallet.get_request_status(self.key)
         self.status_str = req.get_status_str(self.status)
         self.status_color = pr_color[self.status]
-        if self.status == PR_UNPAID and self.is_lightning and self.app.wallet.lnworker:
-            if self.amount_sat and self.amount_sat > self.app.wallet.lnworker.num_sats_can_receive():
-                self.warning = _('Warning') + ': ' + _('This amount exceeds the maximum you can currently receive with your channels')
-        if self.status == PR_UNPAID and not self.is_lightning:
+        if self.status == PR_UNPAID:
             address = req.get_address()
             if self.app.wallet.is_used(address):
                 self.warning = _('Warning') + ': ' + _('This address is being reused')
