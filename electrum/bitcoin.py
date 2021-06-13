@@ -380,7 +380,7 @@ def b58_address_to_hash160(addr: str) -> Tuple[int, bytes]:
     _bytes = DecodeBase58Check(addr)
     if len(_bytes) != 22:
         raise Exception(f'expected 22 payload bytes in base58 address. got: {len(_bytes)}')
-    return _bytes[0], _bytes[1:22]
+    return [_bytes[0], _bytes[1]], _bytes[2:22]
 
 
 def hash160_to_p2pkh(h160: bytes, *, net=None) -> str:

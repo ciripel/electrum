@@ -105,28 +105,17 @@ class HistoryScreen(CScreen):
         self.app.tx_dialog(tx)
 
     def get_card(self, tx_item): #tx_hash, tx_mined_status, value, balance):
-        is_lightning = tx_item.get('lightning', False)
-        timestamp = tx_item['timestamp']
         key = tx_item.get('txid') or tx_item['payment_hash']
-        if is_lightning:
-            status = 0
-            status_str = 'unconfirmed' if timestamp is None else format_time(int(timestamp))
-            icon = f'atlas://{KIVY_GUI_PATH}/theming/atlas/light/lightning'
-            message = tx_item['label']
-            fee_msat = tx_item['fee_msat']
-            fee = int(fee_msat/1000) if fee_msat else None
-            fee_text = '' if fee is None else 'fee: %d sat'%fee
-        else:
-            tx_hash = tx_item['txid']
-            conf = tx_item['confirmations']
-            tx_mined_info = TxMinedInfo(height=tx_item['height'],
-                                        conf=tx_item['confirmations'],
-                                        timestamp=tx_item['timestamp'])
-            status, status_str = self.app.wallet.get_tx_status(tx_hash, tx_mined_info)
-            icon = f'atlas://{KIVY_GUI_PATH}/theming/atlas/light/' + TX_ICONS[status]
-            message = tx_item['label'] or tx_hash
-            fee = tx_item['fee_sat']
-            fee_text = '' if fee is None else 'fee: %d sat'%fee
+        tx_hash = tx_item['txid']
+        conf = tx_item['confirmations']
+        tx_mined_info = TxMinedInfo(height=tx_item['height'],
+                                    conf=tx_item['confirmations'],
+                                    timestamp=tx_item['timestamp'])
+        status, status_str = self.app.wallet.get_tx_status(tx_hash, tx_mined_info)
+        icon = f'atlas://{KIVY_GUI_PATH}/theming/atlas/light/' + TX_ICONS[status]
+        message = tx_item['label'] or tx_hash
+        fee = tx_item['fee_sat']
+        fee_text = '' if fee is None else 'fee: %d sat'%fee
         ri = {}
         ri['screen'] = self
         ri['key'] = key
@@ -178,7 +167,6 @@ class SendScreen(CScreen, Logger):
         self.amount = self.app.format_amount_and_units(amount) if amount else ''
         self.is_max = False
         self.payment_request = None
-        self.is_lightning = False
 
     def update(self):
         if self.app.wallet is None:
@@ -198,7 +186,7 @@ class SendScreen(CScreen, Logger):
         payments_container.refresh_from_data()
 
     def show_item(self, obj):
-        self.app.show_invoice(obj.is_lightning, obj.key)
+        self.app.show_invoice(obj.key)
 
     def get_card(self, item: Invoice) -> Dict[str, Any]:
         status = self.app.wallet.get_invoice_status(item)
@@ -223,7 +211,6 @@ class SendScreen(CScreen, Logger):
         self.message = ''
         self.address = ''
         self.payment_request = None
-        self.is_lightning = False
         self.is_bip70 = False
         self.parsed_URI = None
         self.is_max = False
@@ -402,7 +389,6 @@ class ReceiveScreen(CScreen):
         self.app.show_request(lightning, key)
 
     def get_card(self, req: Invoice) -> Dict[str, Any]:
-        is_lightning = req.is_lightning()
         assert isinstance(req, OnchainInvoice)
         address = req.get_address()
         key = self.app.wallet.get_key_for_receive_request(req)
@@ -413,7 +399,6 @@ class ReceiveScreen(CScreen):
         ci = {}
         ci['screen'] = self
         ci['address'] = address
-        ci['is_lightning'] = is_lightning
         ci['key'] = key
         ci['amount'] = self.app.format_amount_and_units(amount) if amount else ''
         ci['memo'] = description or _('No Description')
@@ -442,7 +427,7 @@ class ReceiveScreen(CScreen):
         payments_container.refresh_from_data()
 
     def show_item(self, obj):
-        self.app.show_request(obj.is_lightning, obj.key)
+        self.app.show_request(obj.key)
 
     def expiration_dialog(self, obj):
         from .dialogs.choice_dialog import ChoiceDialog

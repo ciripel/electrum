@@ -123,22 +123,14 @@ class HistoryNode(CustomNode):
         col = index.column()
         window = self.model.parent
         tx_item = self.get_data()
-        is_lightning = tx_item.get('lightning', False)
         timestamp = tx_item['timestamp']
-        if is_lightning:
-            status = 0
-            if timestamp is None:
-                status_str = 'unconfirmed'
-            else:
-                status_str = format_time(int(timestamp))
-        else:
-            tx_hash = tx_item['txid']
-            conf = tx_item['confirmations']
-            try:
-                status, status_str = self.model.tx_status_cache[tx_hash]
-            except KeyError:
-                tx_mined_info = self.model.tx_mined_info_from_tx_item(tx_item)
-                status, status_str = window.wallet.get_tx_status(tx_hash, tx_mined_info)
+        tx_hash = tx_item['txid']
+        conf = tx_item['confirmations']
+        try:
+            status, status_str = self.model.tx_status_cache[tx_hash]
+        except KeyError:
+            tx_mined_info = self.model.tx_mined_info_from_tx_item(tx_item)
+            status, status_str = window.wallet.get_tx_status(tx_hash, tx_mined_info)
 
         if role == ROLE_SORT_ORDER:
             d = {
@@ -157,35 +149,29 @@ class HistoryNode(CustomNode):
                     tx_item['acquisition_price'].value if 'acquisition_price' in tx_item else None,
                 HistoryColumns.FIAT_CAP_GAINS:
                     tx_item['capital_gain'].value if 'capital_gain' in tx_item else None,
-                HistoryColumns.TXID: tx_hash if not is_lightning else None,
+                HistoryColumns.TXID: tx_hash,
             }
             return QVariant(d[col])
         if role == MyTreeView.ROLE_EDIT_KEY:
             return QVariant(get_item_key(tx_item))
         if role not in (Qt.DisplayRole, Qt.EditRole):
             if col == HistoryColumns.STATUS and role == Qt.DecorationRole:
-                icon = "lightning" if is_lightning else TX_ICONS[status]
+                icon = TX_ICONS[status]
                 return QVariant(read_QIcon(icon))
             elif col == HistoryColumns.STATUS and role == Qt.ToolTipRole:
-                if is_lightning:
-                    msg = 'lightning transaction'
-                else:  # on-chain
-                    if tx_item['height'] == TX_HEIGHT_LOCAL:
-                        # note: should we also explain double-spends?
-                        msg = _("This transaction is only available on your local machine.\n"
-                                "The currently connected server does not know about it.\n"
-                                "You can either broadcast it now, or simply remove it.")
-                    else:
-                        msg = str(conf) + _(" confirmation" + ("s" if conf != 1 else ""))
+                if tx_item['height'] == TX_HEIGHT_LOCAL:
+                    # note: should we also explain double-spends?
+                    msg = _("This transaction is only available on your local machine.\n"
+                            "The currently connected server does not know about it.\n"
+                            "You can either broadcast it now, or simply remove it.")
+                else:
+                    msg = str(conf) + _(" confirmation" + ("s" if conf != 1 else ""))
                 return QVariant(msg)
             elif col > HistoryColumns.DESCRIPTION and role == Qt.TextAlignmentRole:
                 return QVariant(int(Qt.AlignRight | Qt.AlignVCenter))
             elif col > HistoryColumns.DESCRIPTION and role == Qt.FontRole:
                 monospace_font = QFont(MONOSPACE_FONT)
                 return QVariant(monospace_font)
-            #elif col == HistoryColumns.DESCRIPTION and role == Qt.DecorationRole and not is_lightning\
-            #        and self.parent.wallet.invoices.paid.get(tx_hash):
-            #    return QVariant(read_QIcon("seal"))
             elif col in (HistoryColumns.DESCRIPTION, HistoryColumns.AMOUNT) \
                     and role == Qt.ForegroundRole and tx_item['value'].value < 0:
                 red_brush = QBrush(QColor("#BC1E1E"))
@@ -220,7 +206,7 @@ class HistoryNode(CustomNode):
             cg = tx_item['capital_gain'].value
             return QVariant(window.fx.format_fiat(cg))
         elif col == HistoryColumns.TXID:
-            return QVariant(tx_hash) if not is_lightning else QVariant('')
+            return QVariant(tx_hash)
         return QVariant()
 
 

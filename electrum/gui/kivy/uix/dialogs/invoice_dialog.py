@@ -100,7 +100,6 @@ class InvoiceDialog(Factory.Popup):
         self.amount_sat = invoice.get_amount_sat()
         self.amount_str = self.app.format_amount_and_units(self.amount_sat)
         self.description = invoice.message
-        self.is_lightning = invoice.is_lightning()
         self.update_status()
         self.log = []
 

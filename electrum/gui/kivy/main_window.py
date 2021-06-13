@@ -459,17 +459,17 @@ class ElectrumWindow(App, Logger):
         tab = self.tabs.ids[name + '_tab']
         panel.switch_to(tab)
 
-    def show_request(self, is_lightning, key):
+    def show_request(self, key):
         from .uix.dialogs.request_dialog import RequestDialog
         self.request_popup = RequestDialog('Request', key)
         self.request_popup.open()
 
-    def show_invoice(self, is_lightning, key):
+    def show_invoice(self, key):
         from .uix.dialogs.invoice_dialog import InvoiceDialog
         invoice = self.wallet.get_invoice(key)
         if not invoice:
             return
-        data = invoice.invoice if is_lightning else key
+        data = key
         self.invoice_popup = InvoiceDialog('Invoice', data, key)
         self.invoice_popup.open()
 

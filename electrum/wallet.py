@@ -233,7 +233,6 @@ class TxWalletDetails(NamedTuple):
     tx_mined_status: TxMinedInfo
     mempool_depth_bytes: Optional[int]
     can_remove: bool  # whether user should be allowed to delete tx
-    is_lightning_funding_tx: bool
 
 
 class Abstract_Wallet(AddressSynchronizer, ABC):
@@ -513,7 +512,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         exp_n = None
         can_broadcast = False
         tx_hash = tx.txid()  # note: txid can be None! e.g. when called from GUI tx dialog
-        is_lightning_funding_tx = self.is_lightning_funding_tx(tx_hash)
         tx_we_already_have_in_db = self.db.get_transaction(tx_hash)
         can_save_as_local = (is_relevant and tx.txid() is not None
                              and (tx_we_already_have_in_db is None or not tx_we_already_have_in_db.is_complete()))
@@ -575,7 +573,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
             tx_mined_status=tx_mined_status,
             mempool_depth_bytes=exp_n,
             can_remove=can_remove,
-            is_lightning_funding_tx=is_lightning_funding_tx,
         )
 
     def get_spendable_coins(self, domain, *, nonlocal_only=False) -> Sequence[PartialTxInput]:
@@ -681,13 +678,12 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
 
     def save_invoice(self, invoice: Invoice) -> None:
         key = self.get_key_for_outgoing_invoice(invoice)
-        if not invoice.is_lightning():
-            assert isinstance(invoice, OnchainInvoice)
-            if self.is_onchain_invoice_paid(invoice, 0):
-                self.logger.info("saving invoice... but it is already paid!")
-            with self.transaction_lock:
-                for txout in invoice.outputs:
-                    self._invoices_from_scriptpubkey_map[txout.scriptpubkey].add(key)
+        assert isinstance(invoice, OnchainInvoice)
+        if self.is_onchain_invoice_paid(invoice, 0):
+            self.logger.info("saving invoice... but it is already paid!")
+        with self.transaction_lock:
+            for txout in invoice.outputs:
+                self._invoices_from_scriptpubkey_map[txout.scriptpubkey].add(key)
         self.invoices[key] = invoice
         self.save_db()
 
@@ -1624,8 +1620,6 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
         return str(uri)
 
     def check_expired_status(self, r: Invoice, status):
-        if r.is_lightning() and r.exp == 0:
-            status = PR_EXPIRED  # for BOLT-11 invoices, exp==0 means 0 seconds
         if status == PR_UNPAID and r.exp > 0 and r.time + r.exp < time.time():
             status = PR_EXPIRED
         return status

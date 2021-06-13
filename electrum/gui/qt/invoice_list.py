@@ -94,12 +94,9 @@ class InvoiceList(MyTreeView):
         self.update_headers(self.__class__.headers)
         for idx, item in enumerate(self.parent.wallet.get_unpaid_invoices()):
             key = self.parent.wallet.get_key_for_outgoing_invoice(item)
-            if item.is_lightning():
-                icon_name = 'lightning.png'
-            else:
-                icon_name = 'bitcoin.png'
-                if item.bip70:
-                    icon_name = 'seal.png'
+            icon_name = 'bitcoin.png'
+            if item.bip70:
+                icon_name = 'seal.png'
             status = self.parent.wallet.get_invoice_status(item)
             status_str = item.get_status_str(status)
             message = item.message
@@ -148,12 +145,9 @@ class InvoiceList(MyTreeView):
         invoice = self.parent.wallet.get_invoice(key)
         menu = QMenu(self)
         self.add_copy_menu(menu, idx)
-        if invoice.is_lightning():
-            menu.addAction(_("Details"), lambda: self.parent.show_lightning_invoice(invoice))
-        else:
-            if len(invoice.outputs) == 1:
-                menu.addAction(_("Copy Address"), lambda: self.parent.do_copy(invoice.get_address(), title='Bitcoin Address'))
-            menu.addAction(_("Details"), lambda: self.parent.show_onchain_invoice(invoice))
+        if len(invoice.outputs) == 1:
+            menu.addAction(_("Copy Address"), lambda: self.parent.do_copy(invoice.get_address(), title='Bitcoin Address'))
+        menu.addAction(_("Details"), lambda: self.parent.show_onchain_invoice(invoice))
         status = wallet.get_invoice_status(invoice)
         if status == PR_UNPAID:
             menu.addAction(_("Pay") + "...", lambda: self.parent.do_pay_invoice(invoice))

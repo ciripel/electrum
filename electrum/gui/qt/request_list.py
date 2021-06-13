@@ -97,12 +97,8 @@ class RequestList(MyTreeView):
         if req is None:
             self.update()
             return
-        if req.is_lightning():
-            self.parent.receive_payreq_e.setText(req.invoice)  # TODO maybe prepend "lightning:" ??
-            self.parent.receive_address_e.setText(req.invoice)
-        else:
-            self.parent.receive_payreq_e.setText(self.parent.wallet.get_request_URI(req))
-            self.parent.receive_address_e.setText(req.get_address())
+        self.parent.receive_payreq_e.setText(self.parent.wallet.get_request_URI(req))
+        self.parent.receive_address_e.setText(req.get_address())
         self.parent.receive_payreq_e.repaint()  # macOS hack (similar to #4777)
         self.parent.receive_address_e.repaint()  # macOS hack (similar to #4777)
 
@@ -156,12 +152,8 @@ class RequestList(MyTreeView):
             date = format_time(timestamp)
             amount_str = self.parent.format_amount(amount) if amount else ""
             labels = [date, message, amount_str, status_str]
-            if req.is_lightning():
-                icon = read_QIcon("lightning.png")
-                tooltip = 'lightning request'
-            else:
-                icon = read_QIcon("bitcoin.png")
-                tooltip = 'onchain request'
+            icon = read_QIcon("bitcoin.png")
+            tooltip = 'onchain request'
             items = [QStandardItem(e) for e in labels]
             self.set_editability(items)
             items[self.Columns.DATE].setData(request_type, ROLE_REQUEST_TYPE)
@@ -204,12 +196,9 @@ class RequestList(MyTreeView):
             return
         menu = QMenu(self)
         self.add_copy_menu(menu, idx)
-        if req.is_lightning():
-            menu.addAction(_("Copy Request"), lambda: self.parent.do_copy(req.invoice, title='Lightning Request'))
-        else:
-            URI = self.wallet.get_request_URI(req)
-            menu.addAction(_("Copy Request"), lambda: self.parent.do_copy(URI, title='Bitcoin URI'))
-            menu.addAction(_("Copy Address"), lambda: self.parent.do_copy(req.get_address(), title='Bitcoin Address'))
+        URI = self.wallet.get_request_URI(req)
+        menu.addAction(_("Copy Request"), lambda: self.parent.do_copy(URI, title='Bitcoin URI'))
+        menu.addAction(_("Copy Address"), lambda: self.parent.do_copy(req.get_address(), title='Bitcoin Address'))
         #if 'view_url' in req:
         #    menu.addAction(_("View in web browser"), lambda: webopen(req['view_url']))
         menu.addAction(_("Delete"), lambda: self.parent.delete_requests([key]))

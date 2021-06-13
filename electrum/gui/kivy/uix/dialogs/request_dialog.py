@@ -22,7 +22,6 @@ Builder.load_string('''
     amount_str: ''
     title: ''
     description:''
-    is_lightning: False
     key:''
     warning: ''
     status_str: ''
@@ -48,10 +47,10 @@ Builder.load_string('''
             TopLabel:
                 text: _('Amount') + ': ' + root.amount_str
             TopLabel:
-                text: (_('Address') if not root.is_lightning else _('Payment hash')) + ': '
+                text: _('Payment hash') + ': '
             RefLabel:
                 data: root.key
-                name: (_('Address') if not root.is_lightning else _('Payment hash'))
+                name: _('Payment hash')
             TopLabel:
                 text: _('Status') + ': ' + root.status_str
                 color: root.status_color
@@ -94,8 +93,7 @@ class RequestDialog(Factory.Popup):
         self.title = title
         self.key = key
         r = self.app.wallet.get_request(key)
-        self.is_lightning = r.is_lightning()
-        self.data = r.invoice if self.is_lightning else self.app.wallet.get_request_URI(r)
+        self.data = self.app.wallet.get_request_URI(r)
         self.amount_sat = r.get_amount_sat()
         self.amount_str = self.app.format_amount_and_units(self.amount_sat)
         self.description = r.message
@@ -103,10 +101,6 @@ class RequestDialog(Factory.Popup):
 
     def on_open(self):
         data = self.data
-        if self.is_lightning:
-            # encode lightning invoices as uppercase so QR encoding can use
-            # alphanumeric mode; resulting in smaller QR codes
-            data = data.upper()
         self.ids.qr.set_data(data)
 
     def update_status(self):
