@@ -28,6 +28,7 @@ import json
 
 from .util import inv_dict
 from . import bitcoin
+from .blockchain import CHUNK_SIZE
 
 
 def read_json(filename, default):
@@ -51,7 +52,7 @@ class AbstractNet:
 
     @classmethod
     def max_checkpoint(cls) -> int:
-        return max(0, len(cls.CHECKPOINTS) * 2016 - 1)
+        return max(0, len(cls.CHECKPOINTS) * CHUNK_SIZE - 1)
 
     @classmethod
     def rev_genesis_bytes(cls) -> bytes:
@@ -62,14 +63,23 @@ class BitcoinMainnet(AbstractNet):
 
     TESTNET = False
     WIF_PREFIX = 0x80
-    ADDRTYPE_P2PKH = bytes.fromhex("1C28")
-    ADDRTYPE_P2SH = bytes.fromhex("1C2D")
+    ADDRTYPE_P2PKH = [0x1C, 0x28]
+    ADDRTYPE_P2SH = [0x1C, 0x2D]
     SEGWIT_HRP = "bc"
     GENESIS = "00068b35729d9d2b0c294ff1fe9af0094740524311a131de40e7f705e4c29a5b"
     DEFAULT_PORTS = {'t': '50001', 's': '50002'}
     DEFAULT_SERVERS = read_json('servers.json', {})
     CHECKPOINTS = read_json('checkpoints.json', [])
     BLOCK_HEIGHT_FIRST_LIGHTNING_CHANNELS = 497000
+
+    EQUIHASH_N = 200
+    EQUIHASH_K = 9
+    EQUIHASH_N_NEW = 144
+    EQUIHASH_K_NEW = 5
+    FORK_BLOCK = 266000
+
+    EQUIHASH_FORK_HEIGHT = 266001
+    OVERWINTER_HEIGHT = 520000
 
     XPRV_HEADERS = {
         'standard':    0x0488ade4,  # xprv
@@ -92,8 +102,8 @@ class BitcoinTestnet(AbstractNet):
 
     TESTNET = True
     WIF_PREFIX = 0xEF
-    ADDRTYPE_P2PKH = bytes.fromhex("1D25")
-    ADDRTYPE_P2SH = bytes.fromhex("1CBA")
+    ADDRTYPE_P2PKH = [0x1D, 0x25]
+    ADDRTYPE_P2SH = [0x1C, 0xBA]
     SEGWIT_HRP = "tb"
     GENESIS = "0739bced3341885cf221cf22b5e91cdb0f5da3cb34da982167c4c900723c725a"
     DEFAULT_PORTS = {'t': '51001', 's': '51002'}

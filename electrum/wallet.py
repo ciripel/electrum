@@ -202,8 +202,6 @@ def get_locktime_for_new_transaction(network: 'Network') -> int:
     if not network:
         return 0
     chain = network.blockchain()
-    if chain.is_tip_stale():
-        return 0
     # discourage "fee sniping"
     locktime = chain.height()
     # sometimes pick locktime a bit further back, to help privacy
@@ -348,7 +346,7 @@ class Abstract_Wallet(AddressSynchronizer, ABC):
             addr = str(addrs[0])
             if not bitcoin.is_address(addr):
                 neutered_addr = addr[:5] + '..' + addr[-2:]
-                raise WalletFileException(f'The addresses in this wallet are not bitcoin addresses.\n'
+                raise WalletFileException(f'The addresses in this wallet are not TENT addresses.\n'
                                           f'e.g. {neutered_addr} (length: {len(addr)})')
 
     def check_returned_address_for_corruption(func):

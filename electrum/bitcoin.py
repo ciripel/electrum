@@ -368,7 +368,9 @@ def hash_decode(x: str) -> bytes:
 ############ functions from pywallet #####################
 
 def hash160_to_b58_address(h160: bytes, addrtype: int) -> str:
-    s = addrtype + h160
+    s = bytes([addrtype[0]])
+    s += bytes([addrtype[1]])
+    s += h160
     s = s + sha256d(s)[0:4]
     return base_encode(s, base=58)
 

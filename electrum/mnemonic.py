@@ -252,21 +252,9 @@ def seed_type(x: str) -> str:
         return 'old'
     elif is_new_seed(x, version.SEED_PREFIX):
         return 'standard'
-    elif is_new_seed(x, version.SEED_PREFIX_SW):
-        return 'segwit'
-    elif is_new_seed(x, version.SEED_PREFIX_2FA) and (num_words == 12 or num_words >= 20):
-        # Note: in Electrum 2.7, there was a breaking change in key derivation
-        #       for this seed type. Unfortunately the seed version/prefix was reused,
-        #       and now we can only distinguish them based on number of words. :(
-        return '2fa'
-    elif is_new_seed(x, version.SEED_PREFIX_2FA_SW):
-        return '2fa_segwit'
     return ''
 
 
 def is_seed(x: str) -> bool:
     return bool(seed_type(x))
 
-
-def is_any_2fa_seed_type(seed_type: str) -> bool:
-    return seed_type in ['2fa', '2fa_segwit']
