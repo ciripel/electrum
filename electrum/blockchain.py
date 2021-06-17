@@ -111,7 +111,7 @@ def deserialize_header(s: bytes, height: int) -> dict:
     h['bits'] = hex_to_int(s[104:108])
     h['nonce'] = hash_encode(s[108:140])
     h['sol_size'] = hash_encode(s[140:143])
-    h['solution'] = hash_encode(s[143:])
+    h['solution'] = hash_encode((s[143:get_header_size(height)]))
     h['block_height'] = height
     return h
 
@@ -811,7 +811,7 @@ class Blockchain(Logger):
         if prev_hash != header.get('prev_block_hash'):
             return False
         try:
-            target = self.get_target(height // CHUNK_SIZE - 1)
+            target = self.get_target(height)
         except MissingHeader:
             return False
         try:
