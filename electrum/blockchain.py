@@ -110,8 +110,12 @@ def deserialize_header(s: bytes, height: int) -> dict:
     h['timestamp'] = hex_to_int(s[100:104])
     h['bits'] = hex_to_int(s[104:108])
     h['nonce'] = hash_encode(s[108:140])
-    h['sol_size'] = hash_encode(s[140:143])
-    h['solution'] = hash_encode((s[143:get_header_size(height)]))
+    if not is_post_equihash_fork:
+        h['sol_size'] = hash_encode(s[140:143])
+        h['solution'] = hash_encode((s[143:get_header_size(height)]))
+    else:
+        h['sol_size'] = hash_encode(s[140:141])
+        h['solution'] = hash_encode((s[141:get_header_size(height)]))
     h['block_height'] = height
     return h
 

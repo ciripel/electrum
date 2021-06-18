@@ -612,8 +612,10 @@ class Interface(Logger):
         assert_non_negative_integer(res['count'])
         assert_non_negative_integer(res['max'])
         assert_hex_str(res['hex'])
-        if len(res['hex']) != get_header_size(height) * 2 * res['count']:
-            raise RequestCorrupted('inconsistent chunk hex and count')
+        if abs(constants.net.EQUIHASH_FORK_HEIGHT - index * CHUNK_SIZE) > CHUNK_SIZE:
+            # print(abs(constants.net.EQUIHASH_FORK_HEIGHT - index * CHUNK_SIZE))
+            if len(res['hex']) != get_header_size(height) * 2 * res['count']:
+                raise RequestCorrupted('inconsistent chunk hex and count')
         # we never request more than CHUNK_SIZE headers, but we enforce those fit in a single response
         if res['max'] < CHUNK_SIZE:
             raise RequestCorrupted(f"server uses too low 'max' count for block.headers: {res['max']} < CHUNK_SIZE")
