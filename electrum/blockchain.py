@@ -681,9 +681,9 @@ class Blockchain(Logger):
             nextTarget = t * sumTarget
 
             if (nextTarget > (previousDiff * 150) / 100):
-                nextTarget = (previousDiff * 150) / 100
+                nextTarget = int((previousDiff * 150) / 100)
             if ((previousDiff * 67) / 100 > nextTarget):
-                nextTarget = (previousDiff * 67)/100
+                nextTarget = int((previousDiff * 67)/100)
             if (nextTarget > MAX_TARGET):
                 nextTarget = MAX_TARGET
 
