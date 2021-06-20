@@ -51,6 +51,8 @@ from .bitcoin import (TYPE_ADDRESS, TYPE_SCRIPT, hash_160,
                       base_encode, construct_witness, construct_script)
 from .crypto import sha256d
 from .logging import get_logger
+from .keystore import xpubkey_to_address, xpubkey_to_pubkey
+from pyblake2 import blake2b
 
 if TYPE_CHECKING:
     from .wallet import Abstract_Wallet
@@ -59,9 +61,23 @@ if TYPE_CHECKING:
 _logger = get_logger(__name__)
 DEBUG_PSBT_PARSING = False
 
+NO_SIGNATURE = 'ff'
+OVERWINTERED_VERSION_GROUP_ID = 0x03C48270
+OVERWINTER_BRANCH_ID = 0x5BA81B19
+SAPLING_VERSION_GROUP_ID = 0x892F2085
+SAPLING_BRANCH_ID = 0x76B809BB
+
+
+class TransactionVersionError(Exception):
+    """ Thrown when there's a problem with transaction versioning """
+
 
 class SerializationError(Exception):
     """ Thrown when there's a problem deserializing or serializing """
+
+
+class NotRecognizedRedeemScript(Exception):
+    pass
 
 
 class UnknownTxinType(Exception):
@@ -193,15 +209,25 @@ class TxOutpoint(NamedTuple):
         return self.txid == bytes(32)
 
 
+class TxXsg(NamedTuple):
+    x_pubkeys: None  # type []
+    pubkeys: None
+    signatures: None  # type {}
+    address: None
+    num_sig: int
+
+
 class TxInput:
     prevout: TxOutpoint
     script_sig: Optional[bytes]
     nsequence: int
     witness: Optional[bytes]
     _is_coinbase_output: bool
+    txxsg: TxXsg
 
     def __init__(self, *,
                  prevout: TxOutpoint,
+                 txxsg: TxXsg,
                  script_sig: bytes = None,
                  nsequence: int = 0xffffffff - 1,
                  witness: bytes = None,
@@ -443,6 +469,112 @@ def match_script_against_template(script, template) -> bool:
             return False
     return True
 
+def match_decoded(decoded, to_match):
+    if len(decoded) != len(to_match):
+        return False;
+    for i in range(len(decoded)):
+        if to_match[i] == opcodes.OP_PUSHDATA4 and decoded[i][0] <= opcodes.OP_PUSHDATA4 and decoded[i][0]>0:
+            continue  # Opcodes below OP_PUSHDATA4 all just push data onto stack, and are equivalent.
+        if to_match[i] != decoded[i][0]:
+            return False
+    return True
+
+def parse_sig(x_sig):
+    return [None if x == NO_SIGNATURE else x for x in x_sig]
+
+def safe_parse_pubkey(x):
+    try:
+        return xpubkey_to_pubkey(x)
+    except:
+        return x
+
+def parse_scriptSig(_bytes):
+    d = {}
+    try:
+        decoded = [x for x in script_GetOp(_bytes)]
+    except Exception as e:
+        # coinbase transactions raise an exception
+        raise Exception("parse_scriptSig: cannot find address in input script (coinbase?)",
+                        bh2u(_bytes))
+
+    match = [opcodes.OP_PUSHDATA4]
+    if match_decoded(decoded, match):
+        item = decoded[0][1]
+        # assert item[0] == 0x30
+        # pay-to-pubkey
+        d['type'] = 'p2pk'
+        d['address'] = "(pubkey)"
+        d['signatures'] = [bh2u(item)]
+        d['num_sig'] = 1
+        d['x_pubkeys'] = ["(pubkey)"]
+        d['pubkeys'] = ["(pubkey)"]
+        return d
+
+    # p2pkh TxIn transactions push a signature
+    # (71-73 bytes) and then their public key
+    # (33 or 65 bytes) onto the stack:
+    match = [opcodes.OP_PUSHDATA4, opcodes.OP_PUSHDATA4]
+    if match_decoded(decoded, match):
+        sig = bh2u(decoded[0][1])
+        x_pubkey = bh2u(decoded[1][1])
+        try:
+            signatures = parse_sig([sig])
+            pubkey, address = xpubkey_to_address(x_pubkey)
+        except:
+            raise Exception("parse_scriptSig: cannot find address in input script (p2pkh?)",
+                            bh2u(_bytes))
+        d['type'] = 'p2pkh'
+        d['signatures'] = signatures
+        d['x_pubkeys'] = [x_pubkey]
+        d['num_sig'] = 1
+        d['pubkeys'] = [pubkey]
+        d['address'] = address
+        return d
+
+    # p2sh transaction, m of n
+    match = [opcodes.OP_0] + [opcodes.OP_PUSHDATA4] * (len(decoded) - 1)
+    if match_decoded(decoded, match):
+        x_sig = [bh2u(x[1]) for x in decoded[1:-1]]
+        try:
+            m, n, x_pubkeys, pubkeys, redeemScript = parse_redeemScript(
+                decoded[-1][1])
+        except NotRecognizedRedeemScript:
+            raise Exception("parse_scriptSig: cannot find address in input script (p2sh?)",
+                            bh2u(_bytes))
+            # we could still guess:
+            # d['address'] = hash160_to_p2sh(hash_160(decoded[-1][1]))
+            return None
+        # write result in d
+        d['type'] = 'p2sh'
+        d['num_sig'] = m
+        d['signatures'] = parse_sig(x_sig)
+        d['x_pubkeys'] = x_pubkeys
+        d['pubkeys'] = pubkeys
+        d['redeemScript'] = redeemScript
+        d['address'] = hash160_to_p2sh(hash_160(bfh(redeemScript)))
+        return d
+
+    raise Exception("parse_scriptSig: cannot find address in input script (unknown)",
+                    bh2u(_bytes))
+
+def parse_redeemScript(s):
+    dec2 = [x for x in script_GetOp(s)]
+    try:
+        m = dec2[0][0] - opcodes.OP_1 + 1
+        n = dec2[-2][0] - opcodes.OP_1 + 1
+    except IndexError:
+        raise NotRecognizedRedeemScript()
+    op_m = opcodes.OP_1 + m - 1
+    op_n = opcodes.OP_1 + n - 1
+    match_multisig = [op_m] + [opcodes.OP_PUSHDATA4] * \
+        n + [op_n, opcodes.OP_CHECKMULTISIG]
+    if not match_decoded(dec2, match_multisig):
+        raise NotRecognizedRedeemScript()
+    x_pubkeys = [bh2u(x[1]) for x in dec2[1:-2]]
+    pubkeys = [safe_parse_pubkey(x) for x in x_pubkeys]
+    redeemScript = multisig_script(pubkeys, m)
+    return m, n, x_pubkeys, pubkeys, redeemScript
+
 def get_script_type_from_output_script(_bytes: bytes) -> Optional[str]:
     if _bytes is None:
         return None
@@ -477,7 +609,35 @@ def parse_input(vds: BCDataStream) -> TxInput:
     prevout = TxOutpoint(txid=prevout_hash, out_idx=prevout_n)
     script_sig = vds.read_bytes(vds.read_compact_size())
     nsequence = vds.read_uint32()
-    return TxInput(prevout=prevout, script_sig=script_sig, nsequence=nsequence)
+
+    x_pubkeys = []
+    pubkeys = []
+    signatures = {}
+    address = None
+    num_sig = 0
+
+    data = None
+    if script_sig:
+        try:
+            data = parse_scriptSig(script_sig)
+            if data != None:
+                x_pubkeys = data['x_pubkeys']
+                pubkeys = data['pubkeys']
+                signatures = data['signatures']
+                num_sig = data['num_sig']
+                address = data['address']
+            else:
+                raise Exception("parse_scriptSig: Error")
+        except BaseException:
+            raise Exception("parse_scriptSig: Error")
+    else:
+        script_sig = None
+    # custom field
+
+    txxsg = TxXsg(x_pubkeys=x_pubkeys, pubkeys=pubkeys,
+                  signatures=signatures, address=address, num_sig=num_sig)
+
+    return TxInput(prevout=prevout, txxsg=txxsg, script_sig=script_sig, nsequence=nsequence)
 
 
 def parse_witness(vds: BCDataStream, txin: TxInput) -> None:
@@ -486,7 +646,7 @@ def parse_witness(vds: BCDataStream, txin: TxInput) -> None:
     txin.witness = bfh(construct_witness(witness_elements))
 
 
-def parse_output(vds: BCDataStream) -> TxOutput:
+def parse_output(vds: BCDataStream, i: int) -> TxOutput:
     value = vds.read_int64()
     if value > TOTAL_COIN_SUPPLY_LIMIT_IN_BTC * COIN:
         raise SerializationError('invalid output amount (too large)')
@@ -495,6 +655,74 @@ def parse_output(vds: BCDataStream) -> TxOutput:
     scriptpubkey = vds.read_bytes(vds.read_compact_size())
     return TxOutput(value=value, scriptpubkey=scriptpubkey)
 
+def parse_join_split(vds):
+    d = {}
+    d['vpub_old'] = vds.read_uint64()
+    d['vpub_new'] = vds.read_uint64()
+    d['anchor'] = vds.read_bytes(32)
+    d['nullifiers'] = vds.read_bytes(64)
+    d['commitments'] = vds.read_bytes(64)
+    d['ephemeralKey'] = vds.read_bytes(32)
+    d['randomSeed'] = vds.read_bytes(32)
+    d['vmacs'] = vds.read_bytes(64)
+    d['zkproof'] = vds.read_bytes(296)
+    d['encCiphertexts'] = vds.read_bytes(1202)
+    return d
+
+def deserialize(raw):
+    vds = BCDataStream()
+    vds.write(bfh(raw))
+    d = {}
+    start = vds.read_cursor
+
+    header = vds.read_uint32()
+    overwintered = True if header & 0x80000000 else False
+    version = header & 0x7FFFFFFF
+
+    if overwintered:
+        if version not in [3, 4]:
+            raise TransactionVersionError('Overwintered transaction'
+                                          ' with invalid version=%d' % version)
+        ver_group_id = vds.read_uint32()
+        if (version == 3 and ver_group_id != OVERWINTERED_VERSION_GROUP_ID or
+                version == 4 and ver_group_id != SAPLING_VERSION_GROUP_ID):
+            raise TransactionVersionError('Overwintered transaction with wrong'
+                                          ' versionGroupId=%X' % ver_group_id)
+        d['versionGroupId'] = ver_group_id
+
+    d['overwintered'] = overwintered
+    d['version'] = version
+
+    n_vin = vds.read_compact_size()
+    d['inputs'] = [parse_input(vds) for i in range(n_vin)]
+    n_vout = vds.read_compact_size()
+    d['outputs'] = [parse_output(vds, i) for i in range(n_vout)]
+    d['lockTime'] = vds.read_uint32()
+
+    if overwintered:
+        d['expiryHeight'] = vds.read_uint32()
+
+        if version == 4:
+            d['valueBalance'] = vds.read_int64()
+            n_sh_sp = vds.read_compact_size()
+            if n_sh_sp > 0:
+                d['shieldedSpends'] = vds.read_bytes(n_sh_sp*384)
+            n_sh_out = vds.read_compact_size()
+            if n_sh_out > 0:
+                d['shieldedOutputs'] = vds.read_bytes(n_sh_out*948)
+
+        n_js = vds.read_compact_size()
+        if n_js > 0:
+            if version == 3:
+                d['joinSplits'] = [parse_join_split(vds) for i in range(n_js)]
+            else:
+                d['joinSplits'] = vds.read_bytes(n_js*1698)
+            d['joinSplitPubKey'] = vds.read_bytes(32)
+            d['joinSplitSig'] = vds.read_bytes(64)
+            if version == 4:
+                d['bindingSig'] = vds.read_bytes(64)
+
+    return d
 
 # pay & redeem scripts
 
@@ -502,8 +730,6 @@ def multisig_script(public_keys: Sequence[str], m: int) -> str:
     n = len(public_keys)
     assert 1 <= m <= n <= 15, f'm {m}, n {n}'
     return construct_script([m, *public_keys, n, opcodes.OP_CHECKMULTISIG])
-
-
 
 
 class Transaction:
@@ -525,7 +751,17 @@ class Transaction:
         self._inputs = None  # type: List[TxInput]
         self._outputs = None  # type: List[TxOutput]
         self._locktime = 0
-        self._version = 2
+        self._version = 4
+        self.overwintered = True
+        self.versionGroupId = SAPLING_VERSION_GROUP_ID
+        self.expiryHeight = 0
+        self.valueBalance = 0
+        self.shieldedSpends = None
+        self.shieldedOutputs = None
+        self.joinSplits = None
+        self.joinSplitPubKey = None
+        self.joinSplitSig = None
+        self.bindingSig = None
 
         self._cached_txid = None  # type: Optional[str]
 
@@ -575,21 +811,22 @@ class Transaction:
         if self._inputs is not None:
             return
 
-        raw_bytes = bfh(self._cached_network_ser)
-        vds = BCDataStream()
-        vds.write(raw_bytes)
-        self._version = vds.read_int32()
-        n_vin = vds.read_compact_size()
-        if n_vin < 1:
-            raise SerializationError('tx needs to have at least 1 input')
-        self._inputs = [parse_input(vds) for i in range(n_vin)]
-        n_vout = vds.read_compact_size()
-        if n_vout < 1:
-            raise SerializationError('tx needs to have at least 1 output')
-        self._outputs = [parse_output(vds) for i in range(n_vout)]
-        self._locktime = vds.read_uint32()
-        if vds.can_read_more():
-            raise SerializationError('extra junk at the end')
+        d = deserialize(self._cached_network_ser)
+        self._inputs = d['inputs']
+        self._outputs = d['outputs']
+        self.locktime = d['lockTime']
+        self.version = d['version']
+        self.overwintered = d['overwintered']
+        self.versionGroupId = d.get('versionGroupId')
+        self.expiryHeight = d.get('expiryHeight', 0)
+        self.valueBalance = d.get('valueBalance', 0)
+        self.shieldedSpends = d.get('shieldedSpends')
+        self.shieldedOutputs = d.get('shieldedOutputs')
+        self.joinSplits = d.get('joinSplits')
+        self.joinSplitPubKey = d.get('joinSplitPubKey')
+        self.joinSplitSig = d.get('joinSplitSig')
+        self.bindingSig = d.get('bindingSig')
+        return d
 
     @classmethod
     def get_siglist(self, txin: 'PartialTxInput', *, estimate_size=False):
@@ -1661,20 +1898,60 @@ class PartialTransaction(Transaction):
 
     def serialize_preimage(self, txin_index: int, *,
                            bip143_shared_txdigest_fields: BIP143SharedTxDigestFields = None) -> str:
-        nVersion = int_to_hex(self.version, 4)
+        overwintered = self.overwintered
+        version = self.version
+        nHashType = int_to_hex(1, 4)
         nLocktime = int_to_hex(self.locktime, 4)
         inputs = self.inputs()
         outputs = self.outputs()
         txin = inputs[txin_index]
-        sighash = txin.sighash if txin.sighash is not None else SIGHASH_ALL
-        if sighash != SIGHASH_ALL:
-            raise Exception("only SIGHASH_ALL signing is supported!")
-        nHashType = int_to_hex(sighash, 4)
-        preimage_script = self.get_preimage_script(txin)
-        txins = var_int(len(inputs)) + ''.join(self.serialize_input(txin, preimage_script if txin_index==k else '')
-                                                for k, txin in enumerate(inputs))
-        txouts = var_int(len(outputs)) + ''.join(o.serialize_to_network().hex() for o in outputs)
-        preimage = nVersion + txins + txouts + nLocktime + nHashType
+        if overwintered:
+            nHeader = int_to_hex(0x80000000 | version, 4)
+            nVersionGroupId = int_to_hex(self.versionGroupId, 4)
+            s_prevouts = bfh(''.join(self.serialize_outpoint(txin)
+                             for txin in inputs))
+            hashPrevouts = blake2b(
+                s_prevouts, digest_size=32, person=b'ZcashPrevoutHash').hexdigest()
+            s_sequences = bfh(''.join(int_to_hex(txin.nsequence, 4)
+                              for txin in inputs))
+            hashSequence = blake2b(
+                s_sequences, digest_size=32, person=b'ZcashSequencHash').hexdigest()
+            s_outputs = bfh(''.join(self.serialize_output(o) for o in outputs))
+            hashOutputs = blake2b(s_outputs, digest_size=32,
+                                  person=b'ZcashOutputsHash').hexdigest()
+            joinSplits = self.joinSplits
+            #if joinSplits is None:
+            #    hashJoinSplits = '00'*32
+            #else:
+            #    s_joinSplits = bfh(''.join(self.serialize_join_split(j) for j in joinSplits))
+            #    s_joinSplits += self.joinSplitPubKey
+            #    hashJoinSplits = blake2b(s_joinSplits, digest_size=32, person=b'SnowGemJSplitsHash').hexdigest()
+            hashJoinSplits = '00'*32
+            hashShieldedSpends = '00'*32
+            hashShieldedOutputs = '00'*32
+            nExpiryHeight = int_to_hex(self.expiryHeight, 4)
+            nValueBalance = int_to_hex(self.valueBalance, 8)
+
+            txin = inputs[txin_index]
+
+            preimage_script = self.get_preimage_script(txin)
+            scriptCode = var_int(len(preimage_script) // 2) + preimage_script
+            preimage = (
+                nHeader + nVersionGroupId + hashPrevouts + hashSequence + hashOutputs
+                + hashJoinSplits + hashShieldedSpends + hashShieldedOutputs + nLocktime
+                + nExpiryHeight + nValueBalance + nHashType
+                + self.serialize_outpoint(txin)
+                + scriptCode
+                + int_to_hex(txin._trusted_value_sats, 8)
+                + int_to_hex(txin.nsequence, 4)
+            )
+        else:
+            nVersion = int_to_hex(version, 4)
+            txins = var_int(len(inputs)) + ''.join(self.serialize_input(
+                txin, self.get_preimage_script(txin) if txin_index == k else '') for k, txin in enumerate(inputs))
+            txouts = var_int(len(outputs)) + \
+                ''.join(self.serialize_output(o) for o in outputs)
+            preimage = nVersion + txins + txouts + nLocktime + nHashType
         return preimage
 
     def sign(self, keypairs) -> None:

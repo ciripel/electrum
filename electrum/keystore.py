@@ -31,8 +31,7 @@ from functools import lru_cache
 from abc import ABC, abstractmethod
 
 from . import bitcoin, ecc, constants, bip32
-from .bitcoin import deserialize_privkey, serialize_privkey, BaseDecodeError
-from .transaction import Transaction, PartialTransaction, PartialTxInput, PartialTxOutput, TxInput
+from .bitcoin import deserialize_privkey, serialize_privkey, public_key_to_p2pkh, BaseDecodeError
 from .bip32 import (convert_bip32_path_to_list_of_uint32, BIP32_PRIME,
                     is_xpub, is_xprv, BIP32Node, normalize_bip32_derivation,
                     is_xkey_consistent_with_key_origin_info)
@@ -48,6 +47,7 @@ from .logging import Logger
 if TYPE_CHECKING:
     from .gui.qt.util import TaskThread
     from .plugins.hw_wallet import HW_PluginBase, HardwareClientBase, HardwareHandlerBase
+    from .transaction import Transaction, PartialTransaction, PartialTxInput, PartialTxOutput, TxInput
     from .wallet_db import WalletDB
 
 
@@ -903,6 +903,28 @@ def from_bip39_seed(seed, passphrase, derivation, xtype='standard'):
     k.add_xprv_from_seed(bip32_seed, xtype, derivation)
     return k
 
+def xpubkey_to_address(x_pubkey):
+    if x_pubkey[0:2] == 'fd':
+        address = bitcoin.script_to_address(x_pubkey[2:])
+        return x_pubkey, address
+    if x_pubkey[0:2] in ['02', '03', '04']:
+        pubkey = x_pubkey
+    elif x_pubkey[0:2] == 'ff':
+        xpub, s = BIP32_KeyStore.parse_xpubkey(x_pubkey)
+        pubkey = BIP32_KeyStore.get_pubkey_from_xpub(xpub, s)
+    elif x_pubkey[0:2] == 'fe':
+        mpk, s = Old_KeyStore.parse_xpubkey(x_pubkey)
+        pubkey = Old_KeyStore.get_pubkey_from_mpk(mpk, s[0], s[1])
+    else:
+        raise BitcoinException("Cannot parse pubkey. prefix: {}"
+                               .format(x_pubkey[0:2]))
+    if pubkey:
+        address = public_key_to_p2pkh(bfh(pubkey))
+    return pubkey, address
+
+def xpubkey_to_pubkey(x_pubkey):
+    pubkey, address = xpubkey_to_address(x_pubkey)
+    return pubkey
 
 hw_keystores = {}
 
