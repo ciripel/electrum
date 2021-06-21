@@ -776,7 +776,8 @@ class AddressSynchronizer(Logger):
         for prevout_str, v in coins.items():
             tx_height, value, is_cb = v
             prevout = TxOutpoint.from_str(prevout_str)
-            utxo = PartialTxInput(prevout=prevout, is_coinbase_output=is_cb)
+            utxo = PartialTxInput(prevout=prevout,
+                                  is_coinbase_output=is_cb, txxsg=None)
             utxo._trusted_address = address
             utxo._trusted_value_sats = value
             utxo.block_height = tx_height

@@ -39,7 +39,7 @@ from .ecc import string_to_number
 from .crypto import (pw_decode, pw_encode, sha256, sha256d, PW_HASH_VERSION_LATEST,
                      SUPPORTED_PW_HASH_VERSIONS, UnsupportedPasswordHashVersion, hash_160)
 from .util import (InvalidPassword, WalletFileException,
-                   BitcoinException, bfh, is_hex_str)
+                   BitcoinException, bh2u, bfh, is_hex_str)
 from .mnemonic import Mnemonic, Wordlist, seed_type
 from .plugin import run_hook
 from .logging import Logger
@@ -542,6 +542,25 @@ class Xpub(MasterPublicKeyMixin):
         node = BIP32Node.from_xkey(xpub).subkey_at_public_derivation(sequence)
         return node.eckey.get_public_key_bytes(compressed=True)
 
+    def get_xpubkey(self, c, i):
+        s = ''.join(map(lambda x: bitcoin.int_to_hex(x, 2), (c, i)))
+        return 'ff' + bh2u(bitcoin.DecodeBase58Check(self.xpub)) + s
+
+    @classmethod
+    def parse_xpubkey(self, pubkey):
+        assert pubkey[0:2] == 'ff'
+        pk = bfh(pubkey)
+        pk = pk[1:]
+        xkey = bitcoin.EncodeBase58Check(pk[0:78])
+        dd = pk[78:]
+        s = []
+        while dd:
+            n = int(bitcoin.rev_hex(bh2u(dd[0:2])), 16)
+            dd = dd[2:]
+            s.append(n)
+        assert len(s) == 2
+        return xkey, s
+
 
 class BIP32_KeyStore(Xpub, Deterministic_KeyStore):
 
@@ -759,6 +778,20 @@ class Old_KeyStore(MasterPublicKeyMixin, Deterministic_KeyStore):
             self.seed = pw_encode(decoded, new_password, version=PW_HASH_VERSION_LATEST)
         self.pw_hash_version = PW_HASH_VERSION_LATEST
 
+    @classmethod
+    def parse_xpubkey(self, x_pubkey):
+        assert x_pubkey[0:2] == 'fe'
+        pk = x_pubkey[2:]
+        mpk = pk[0:128]
+        dd = pk[128:]
+        s = []
+        while dd:
+            n = int(bitcoin.rev_hex(dd[0:4]), 16)
+            dd = dd[4:]
+            s.append(n)
+        assert len(s) == 2
+        return mpk, s
+
 
 class Hardware_KeyStore(Xpub, KeyStore):
     hw_type: str
@@ -902,6 +935,15 @@ def from_bip39_seed(seed, passphrase, derivation, xtype='standard'):
     bip32_seed = bip39_to_seed(seed, passphrase)
     k.add_xprv_from_seed(bip32_seed, xtype, derivation)
     return k
+
+# extended pubkeys
+def is_xpubkey(x_pubkey):
+    return x_pubkey[0:2] == 'ff'
+
+
+def parse_xpubkey(x_pubkey):
+    assert x_pubkey[0:2] == 'ff'
+    return BIP32_KeyStore.parse_xpubkey(x_pubkey)
 
 def xpubkey_to_address(x_pubkey):
     if x_pubkey[0:2] == 'fd':

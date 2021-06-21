@@ -43,7 +43,7 @@ import copy
 from . import ecc, bitcoin, constants, bip32
 from .bip32 import BIP32Node
 from .util import profiler, to_bytes, bh2u, bfh, chunks, is_hex_str
-from .bitcoin import (TYPE_ADDRESS, TYPE_SCRIPT, hash_160,
+from .bitcoin import (TYPE_ADDRESS, TYPE_PUBKEY, TYPE_SCRIPT, hash_160,
                       hash160_to_p2sh, hash160_to_p2pkh,
                       var_int, TOTAL_COIN_SUPPLY_LIMIT_IN_BTC, COIN,
                       int_to_hex, push_script, b58_address_to_hash160,
@@ -131,7 +131,8 @@ class TxOutput:
     def from_network_bytes(cls, raw: bytes) -> 'TxOutput':
         vds = BCDataStream()
         vds.write(raw)
-        txout = parse_output(vds)
+        n_vout = vds.read_compact_size()
+        txout = [parse_output(vds, i) for i in range(n_vout)]
         if vds.can_read_more():
             raise SerializationError('extra junk at the end of TxOutput bytes')
         return txout
@@ -404,16 +405,13 @@ def script_GetOp(_bytes : bytes):
         if opcode <= opcodes.OP_PUSHDATA4:
             nSize = opcode
             if opcode == opcodes.OP_PUSHDATA1:
-                try: nSize = _bytes[i]
-                except IndexError: raise MalformedBitcoinScript()
+                nSize = _bytes[i]
                 i += 1
             elif opcode == opcodes.OP_PUSHDATA2:
-                try: (nSize,) = struct.unpack_from('<H', _bytes, i)
-                except struct.error: raise MalformedBitcoinScript()
+                (nSize,) = struct.unpack_from('<H', _bytes, i)
                 i += 2
             elif opcode == opcodes.OP_PUSHDATA4:
-                try: (nSize,) = struct.unpack_from('<I', _bytes, i)
-                except struct.error: raise MalformedBitcoinScript()
+                (nSize,) = struct.unpack_from('<I', _bytes, i)
                 i += 4
             vch = _bytes[i:i + nSize]
             i += nSize
@@ -471,7 +469,7 @@ def match_script_against_template(script, template) -> bool:
 
 def match_decoded(decoded, to_match):
     if len(decoded) != len(to_match):
-        return False;
+        return False
     for i in range(len(decoded)):
         if to_match[i] == opcodes.OP_PUSHDATA4 and decoded[i][0] <= opcodes.OP_PUSHDATA4 and decoded[i][0]>0:
             continue  # Opcodes below OP_PUSHDATA4 all just push data onto stack, and are equivalent.
@@ -805,6 +803,17 @@ class Transaction:
             self.deserialize()
         return self._outputs
 
+    @classmethod
+    def pay_script(self, output_type, addr):
+        if output_type == TYPE_SCRIPT:
+            return addr
+        elif output_type == TYPE_ADDRESS:
+            return bitcoin.address_to_script(addr)
+        elif output_type == TYPE_PUBKEY:
+            return bitcoin.public_key_to_p2pk_script(addr)
+        else:
+            raise TypeError('Unknown output type')
+
     def deserialize(self) -> None:
         if self._cached_network_ser is None:
             return
@@ -827,6 +836,55 @@ class Transaction:
         self.joinSplitSig = d.get('joinSplitSig')
         self.bindingSig = d.get('bindingSig')
         return d
+
+    @classmethod
+    def get_sorted_pubkeys(self, txin):
+        # sort pubkeys and x_pubkeys, using the order of pubkeys
+        if txin['type'] == 'coinbase':
+            return [], []
+        x_pubkeys = txin['x_pubkeys']
+        pubkeys = txin.get('pubkeys')
+        if pubkeys is None:
+            pubkeys = [xpubkey_to_pubkey(x) for x in x_pubkeys]
+            pubkeys, x_pubkeys = zip(*sorted(zip(pubkeys, x_pubkeys)))
+            txin['pubkeys'] = pubkeys = list(pubkeys)
+            txin['x_pubkeys'] = x_pubkeys = list(x_pubkeys)
+        return pubkeys, x_pubkeys
+
+    @classmethod
+    def estimate_pubkey_size_from_x_pubkey(cls, x_pubkey):
+        try:
+            if x_pubkey[0:2] in ['02', '03']:  # compressed pubkey
+                return 0x21
+            elif x_pubkey[0:2] == '04':  # uncompressed pubkey
+                return 0x41
+            elif x_pubkey[0:2] == 'ff':  # bip32 extended pubkey
+                return 0x21
+            elif x_pubkey[0:2] == 'fe':  # old electrum extended pubkey
+                return 0x41
+        except Exception as e:
+            pass
+        return 0x21  # just guess it is compressed
+
+    @classmethod
+    def estimate_pubkey_size_for_txin(cls, txin):
+        pubkeys = txin.get('pubkeys', [])
+        x_pubkeys = txin.get('x_pubkeys', [])
+        if pubkeys and len(pubkeys) > 0:
+            return cls.estimate_pubkey_size_from_x_pubkey(pubkeys[0])
+        elif x_pubkeys and len(x_pubkeys) > 0:
+            return cls.estimate_pubkey_size_from_x_pubkey(x_pubkeys[0])
+        else:
+            return 0x21  # just guess it is compressed
+
+    @classmethod
+    def is_txin_complete(cls, txin):
+        if txin['type'] == 'coinbase':
+            return True
+        num_sig = txin.get('num_sig', 1)
+        x_signatures = txin['signatures']
+        signatures = list(filter(None, x_signatures))
+        return len(signatures) == num_sig
 
     @classmethod
     def get_siglist(self, txin: 'PartialTxInput', *, estimate_size=False):
@@ -925,6 +983,10 @@ class Transaction:
             raise UnknownTxinType(f'cannot construct preimage_script for txin_type: {txin.script_type}')
 
     @classmethod
+    def serialize_outpoint(self, txin):
+        return bh2u(bfh(txin.prevout_hash)[::-1]) + int_to_hex(txin.prevout_n, 4)
+
+    @classmethod
     def serialize_input(self, txin: TxInput, script: str) -> str:
         # Prev hash and index
         s = txin.prevout.serialize_to_network().hex()
@@ -932,6 +994,15 @@ class Transaction:
         s += var_int(len(script)//2)
         s += script
         s += int_to_hex(txin.nsequence, 4)
+        return s
+
+    @classmethod
+    def serialize_output(self, output: TxOutput):
+        output_type, addr, amount = output.to_legacy_tuple()
+        s = int_to_hex(amount, 8)
+        script = self.pay_script(output_type, addr)
+        s += var_int(len(script)//2)
+        s += script
         return s
 
     def _calc_bip143_shared_txdigest_fields(self) -> BIP143SharedTxDigestFields:
@@ -967,15 +1038,20 @@ class Transaction:
         inputs = self.inputs()
         outputs = self.outputs()
 
-        def create_script_sig(txin: TxInput) -> str:
-            if include_sigs:
-                return self.input_script(txin, estimate_size=estimate_size)
-            return ''
-        txins = var_int(len(inputs)) + ''.join(self.serialize_input(txin, create_script_sig(txin))
-                                               for txin in inputs)
-        txouts = var_int(len(outputs)) + ''.join(o.serialize_to_network().hex() for o in outputs)
-
-        return nVersion + txins + txouts + nLocktime
+        txins = var_int(len(inputs)) + \
+            ''.join(self.serialize_input(txin, self.input_script(txin)) for txin in inputs)
+        txouts = var_int(len(outputs)) + \
+            ''.join(o.serialize_to_network().hex() for o in outputs)
+        
+        if self.overwintered:
+            nVersion = int_to_hex(0x80000000 | self.version, 4)
+            nVersionGroupId = int_to_hex(self.versionGroupId, 4)
+            nExpiryHeight = int_to_hex(self.expiryHeight, 4)
+            nValueBalance = int_to_hex(self.valueBalance, 8)
+            return (nVersion + nVersionGroupId + txins + txouts + nLocktime
+                    + nExpiryHeight + nValueBalance + '00' + '00' + '00')
+        else:
+            return nVersion + txins + txouts + nLocktime
 
     def to_qr_data(self) -> str:
         """Returns tx as data to be put into a QR code. No side-effects."""
@@ -1077,7 +1153,7 @@ class Transaction:
         if not hasattr(self, '_script_to_output_idx'):
             d = defaultdict(set)
             for output_idx, o in enumerate(self.outputs()):
-                o_script = o.scriptpubkey.hex()
+                o_script = bfh(bitcoin.address_to_script(o.address)).hex()
                 assert isinstance(o_script, str)
                 d[o_script].add(output_idx)
             self._script_to_output_idx = d
