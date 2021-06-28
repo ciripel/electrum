@@ -1133,7 +1133,7 @@ class Transaction:
 
     def estimated_base_size(self):
         """Return an estimated base transaction size in bytes."""
-        return self.estimated_total_size() - self.estimated_witness_size()
+        return self.estimated_total_size()
 
     def estimated_weight(self):
         """Return an estimate of transaction weight."""
