@@ -120,10 +120,9 @@ class CoinChooserBase(Logger):
         constant_fee = fee_estimator_vb(2000) == fee_estimator_vb(200)
 
         def make_Bucket(desc: str, coins: List[PartialTxInput]):
-            witness = any(coin.is_segwit(guess_for_address=True) for coin in coins)
             # note that we're guessing whether the tx uses segwit based
             # on this single bucket
-            weight = sum(Transaction.estimated_input_weight(coin, witness)
+            weight = sum(Transaction.estimated_input_weight(coin)
                          for coin in coins)
             value = sum(coin.value_sats() for coin in coins)
             min_height = min(coin.block_height for coin in coins)
@@ -143,8 +142,7 @@ class CoinChooserBase(Logger):
                           value=value,
                           effective_value=effective_value,
                           coins=coins,
-                          min_height=min_height,
-                          witness=witness)
+                          min_height=min_height)
 
         return list(map(make_Bucket, buckets.keys(), buckets.values()))
 
@@ -253,15 +251,6 @@ class CoinChooserBase(Logger):
         at this point are not yet known so they are NOT accounted for.
         """
         total_weight = base_weight + sum(bucket.weight for bucket in buckets)
-        is_segwit_tx = any(bucket.witness for bucket in buckets)
-        if is_segwit_tx:
-            total_weight += 2  # marker and flag
-            # non-segwit inputs were previously assumed to have
-            # a witness of '' instead of '00' (hex)
-            # note that mixed legacy/segwit buckets are already ok
-            num_legacy_inputs = sum((not bucket.witness) * len(bucket.coins)
-                                    for bucket in buckets)
-            total_weight += num_legacy_inputs
 
         return total_weight
 

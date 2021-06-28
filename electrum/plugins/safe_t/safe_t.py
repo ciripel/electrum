@@ -51,7 +51,7 @@ class SafeTKeyStore(Hardware_KeyStore):
         prev_tx = {}
         for txin in tx.inputs():
             tx_hash = txin.prevout.txid.hex()
-            if txin.utxo is None and not txin.is_segwit():
+            if txin.utxo is None:
                 raise UserFacingException(_('Missing previous tx for legacy input.'))
             prev_tx[tx_hash] = txin.utxo
 
