@@ -78,7 +78,6 @@ class Bucket(NamedTuple):
     effective_value: int          # estimate of value left after subtracting fees. in satoshis
     coins: List[PartialTxInput]   # UTXOs
     min_height: int               # min block height where a coin was confirmed
-    witness: bool                 # whether any coin uses segwit
 
 
 class ScoredCandidate(NamedTuple):
