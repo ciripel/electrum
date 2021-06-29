@@ -27,6 +27,10 @@
 
 # Note: The deserialization code originally comes from ABE.
 
+from ecdsa import util
+from ecdsa.curves import SECP256k1
+import hashlib
+
 import struct
 import traceback
 import sys
@@ -48,10 +52,12 @@ from .bitcoin import (TYPE_ADDRESS, TYPE_PUBKEY, TYPE_SCRIPT, hash_160,
                       var_int, TOTAL_COIN_SUPPLY_LIMIT_IN_BTC, COIN,
                       int_to_hex, push_script, b58_address_to_hash160,
                       opcodes, add_number_to_script, base_decode,
-                      base_encode, construct_witness, construct_script)
+                      base_encode, construct_witness, construct_script,
+                      Hash, public_key_from_private_key)
 from .crypto import sha256d
 from .logging import get_logger
 from pyblake2 import blake2b
+import pyblake2
 
 if TYPE_CHECKING:
     from .wallet import Abstract_Wallet
@@ -750,7 +756,6 @@ class Transaction:
         self._version = 4
         self.overwintered = True
         self.versionGroupId = SAPLING_VERSION_GROUP_ID
-        self.branchId = SAPLING_BRANCH_ID
         self.expiryHeight = 0
         self.valueBalance = 0
         self.shieldedSpends = None
@@ -760,6 +765,7 @@ class Transaction:
         self.joinSplitSig = None
         self.bindingSig = None
 
+        self.branchId = SAPLING_BRANCH_ID
         self._cached_txid = None  # type: Optional[str]
 
     @property
@@ -836,19 +842,20 @@ class Transaction:
         self.bindingSig = d.get('bindingSig')
         return d
 
-    @classmethod
-    def get_sorted_pubkeys(self, txin):
-        # sort pubkeys and x_pubkeys, using the order of pubkeys
-        if txin['type'] == 'coinbase':
-            return [], []
-        x_pubkeys = txin['x_pubkeys']
-        pubkeys = txin.get('pubkeys')
-        if pubkeys is None:
-            pubkeys = [keystore.xpubkey_to_pubkey(x) for x in x_pubkeys]
-            pubkeys, x_pubkeys = zip(*sorted(zip(pubkeys, x_pubkeys)))
-            txin['pubkeys'] = pubkeys = list(pubkeys)
-            txin['x_pubkeys'] = x_pubkeys = list(x_pubkeys)
-        return pubkeys, x_pubkeys
+    # @classmethod
+    # def get_sorted_pubkeys(self, txin: 'PartialTxInput'):
+    #     # sort pubkeys and x_pubkeys, using the order of pubkeys
+    #     print(type(txin))
+    #     if txin.is_coinbase_input():
+    #         return [], []
+    #     x_pubkeys = txin.x_pubkeys
+    #     pubkeys = txin.pubkeys
+    #     if pubkeys is None:
+    #         pubkeys = [keystore.xpubkey_to_pubkey(x) for x in x_pubkeys]
+    #         pubkeys, x_pubkeys = zip(*sorted(zip(pubkeys, x_pubkeys)))
+    #         txin.pubkeys = pubkeys = list(pubkeys)
+    #         txin.x_pubkeys = x_pubkeys = list(x_pubkeys)
+    #     return pubkeys, x_pubkeys
 
     @classmethod
     def estimate_pubkey_size_from_x_pubkey(cls, x_pubkey):
@@ -1355,6 +1362,7 @@ class PartialTxInput(TxInput, PSBTSection):
         self.script_type = 'unknown'
         self.num_sig = 0  # type: int  # num req sigs for multisig
         self.pubkeys = []  # type: List[bytes]  # note: order matters
+        self.x_pubkeys = []  # type: List[bytes]  # note: order matters
         self._trusted_value_sats = None  # type: Optional[int]
         self._trusted_address = None  # type: Optional[str]
         self.block_height = None  # type: Optional[int]  # height at which the TXO is mined; None means unknown
@@ -2033,6 +2041,47 @@ class PartialTransaction(Transaction):
             preimage = nVersion + txins + txouts + nLocktime + nHashType
         return preimage
 
+    # def sign(self, keypairs):
+    #     for i, txin in enumerate(self.inputs()):
+    #         # num = txin.num_sig
+    #         # pubkeys = self.get_sorted_pubkeys(txin)
+    #         pubkeys = [pk.hex() for pk in txin.pubkeys]
+    #         for j, pubkey in enumerate(pubkeys):
+    #             if txin.is_complete():
+    #                 break
+    #             if pubkey not in keypairs:
+    #                 continue
+    #             _logger.debug("adding signature for", pubkey)
+    #             sec, compressed = keypairs.get(pubkey)
+
+    #             pubkey = public_key_from_private_key(sec, compressed)
+                
+    #             # add signature
+    #             if self.overwintered:
+    #                 data = bfh(self.serialize_preimage(i))
+    #                 person = b'ZcashSigHash' + \
+    #                     SAPLING_BRANCH_ID.to_bytes(4, 'little')
+    #                 pre_hash = blake2b(
+    #                     data, digest_size=32, person=person).digest()
+    #             else:
+    #                 pre_hash = Hash(bfh(self.serialize_preimage(i)))
+    #             pkey = ecc.ECPrivkey(sec)
+    #             secexp = pkey.secret_scalar
+    #             private_key = bitcoin.MySigningKey.from_secret_exponent(
+    #                 secexp, curve=SECP256k1)
+    #             public_key = private_key.get_verifying_key()
+    #             sig = private_key.sign_digest_deterministic(
+    #                 pre_hash, hashfunc=hashlib.sha256, sigencode=util.sigencode_der_canonize)
+    #             if not public_key.verify_digest(sig, pre_hash, sigdecode=util.sigdecode_der):
+    #                 raise Exception(
+    #                     'Sanity check verifying our own signature failed.')
+    #             txin['signatures'][j] = bh2u(sig) + '01'
+    #             #txin['x_pubkeys'][j] = pubkey
+    #             txin['pubkeys'][j] = pubkey  # needed for fd keys
+    #             self._inputs[i] = txin
+    #     _logger.debug("is_complete", self.is_complete())
+    #     self.raw = self.serialize()
+
     def sign(self, keypairs) -> None:
         # keypairs:  pubkey_hex -> (secret_bytes, is_compressed)
         bip143_shared_txdigest_fields = self._calc_bip143_shared_txdigest_fields()
@@ -2044,7 +2093,8 @@ class PartialTransaction(Transaction):
                 if pubkey not in keypairs:
                     continue
                 _logger.info(f"adding signature for {pubkey}")
-                sec, compressed = keypairs[pubkey]
+                sec = keypairs[pubkey]
+
                 sig = self.sign_txin(i, sec, bip143_shared_txdigest_fields=bip143_shared_txdigest_fields)
                 self.add_signature_to_txin(txin_idx=i, signing_pubkey=pubkey, sig=sig)
 
@@ -2052,12 +2102,25 @@ class PartialTransaction(Transaction):
         self.invalidate_ser_cache()
 
     def sign_txin(self, txin_index, privkey_bytes, *, bip143_shared_txdigest_fields=None) -> str:
-        txin = self.inputs()[txin_index]
-        txin.validate_data(for_signing=True)
-        pre_hash = sha256d(bfh(self.serialize_preimage(txin_index,
-                                                       bip143_shared_txdigest_fields=bip143_shared_txdigest_fields)))
-        privkey = ecc.ECPrivkey(privkey_bytes)
-        sig = privkey.sign_transaction(pre_hash)
+
+        if self.overwintered:
+            data = bfh(self.serialize_preimage(txin_index,
+                                               bip143_shared_txdigest_fields=bip143_shared_txdigest_fields))
+            person = b'ZcashSigHash' + SAPLING_BRANCH_ID.to_bytes(4, 'little')
+            pre_hash = blake2b(data, digest_size=32, person=person).digest()
+        else:
+            pre_hash = Hash(bfh(self.serialize_preimage(txin_index)))
+        pkey = ecc.ECPrivkey(privkey_bytes)
+        # secexp = pkey.secret_scalar
+        # private_key = bitcoin.MySigningKey.from_secret_exponent(
+        #     secexp, curve=SECP256k1)
+        # public_key = private_key.get_verifying_key()
+        # sig = private_key.sign_digest_deterministic(
+        #     pre_hash, hashfunc=hashlib.sha256, sigencode=util.sigencode_der_canonize)
+        # if not public_key.verify_digest(sig, pre_hash, sigdecode=util.sigdecode_der):
+        #     raise Exception(
+        #         'Sanity check verifying our own signature failed.')
+        sig = pkey.sign_transaction(pre_hash)
         sig = bh2u(sig) + '01'  # SIGHASH_ALL
         return sig
 

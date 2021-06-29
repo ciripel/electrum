@@ -25,6 +25,8 @@
 
 import base64
 import hashlib
+from ecdsa import ecdsa
+from ecdsa.ecdsa import generator_secp256k1
 import functools
 from typing import Union, Tuple, Optional
 from ctypes import (
@@ -397,12 +399,16 @@ def is_secret_within_curve_range(secret: Union[int, bytes]) -> bool:
 class ECPrivkey(ECPubkey):
 
     def __init__(self, privkey_bytes: bytes):
-        assert_bytes(privkey_bytes)
-        if len(privkey_bytes) != 32:
-            raise Exception('unexpected size for secret. should be 32 bytes, not {}'.format(len(privkey_bytes)))
+        print(f'This is the privkey bytes len: {len(privkey_bytes)}')
+        # assert_bytes(privkey_bytes)
+        # if len(privkey_bytes) != 32:
+        #     raise Exception('unexpected size for secret. should be 32 bytes, not {}'.format(len(privkey_bytes)))
         secret = string_to_number(privkey_bytes)
         if not is_secret_within_curve_range(secret):
             raise InvalidECPointException('Invalid secret scalar (not within curve order)')
+        self.pubkey = ecdsa.Public_key(
+            generator_secp256k1, generator_secp256k1 * secret)
+        self.privkey = ecdsa.Private_key(self.pubkey, secret)
         self.secret_scalar = secret
 
         pubkey = GENERATOR * secret

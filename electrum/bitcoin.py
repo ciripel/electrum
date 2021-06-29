@@ -23,6 +23,9 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import ecdsa
+from ecdsa.curves import SECP256k1
+
 from typing import Tuple, TYPE_CHECKING, Optional, Union, Sequence
 import enum
 from enum import IntEnum, Enum
@@ -194,9 +197,53 @@ class opcodes(IntEnum):
         return bytes([self]).hex()
 
 
+# pywallet openssl private key implementation
+
+def i2o_ECPublicKey(pubkey, compressed=False):
+    # public keys are 65 bytes long (520 bits)
+    # 0x04 + 32-byte X-coordinate + 32-byte Y-coordinate
+    # 0x00 = point at infinity, 0x02 and 0x03 = compressed, 0x04 = uncompressed
+    # compressed keys: <sign> <x> where <sign> is 0x02 if y is even and 0x03 if y is odd
+    if compressed:
+        if pubkey.point.y() & 1:
+            key = '03' + '%064x' % pubkey.point.x()
+        else:
+            key = '02' + '%064x' % pubkey.point.x()
+    else:
+        key = '04' + \
+              '%064x' % pubkey.point.x() + \
+              '%064x' % pubkey.point.y()
+
+    return bfh(key)
+# end pywallet openssl private key implementation
+
+class MySigningKey(ecdsa.SigningKey):
+    """Enforce low S values in signatures"""
+
+    def sign_number(self, number, entropy=None, k=None):
+        curve = SECP256k1
+        G = curve.generator
+        order = G.order()
+        r, s = ecdsa.SigningKey.sign_number(self, number, entropy, k)
+        if s > order//2:
+            s = order - s
+        return r, s
+
+def Hash(x):
+    x = to_bytes(x, 'utf8')
+    out = bytes(sha256(sha256(x)))
+    return out
+
+def GetPubKey(pubkey, compressed=False):
+    return i2o_ECPublicKey(pubkey, compressed)
+
+def public_key_from_private_key(pk, compressed):
+    pkey = ecc.ECPrivkey(pk)
+    public_key = GetPubKey(pkey.pubkey, compressed)
+    return bh2u(public_key)
+
 def rev_hex(s: str) -> str:
     return bh2u(bfh(s)[::-1])
-
 
 def int_to_hex(i: int, length: int=1) -> str:
     """Converts int to little-endian hex string.
