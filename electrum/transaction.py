@@ -40,7 +40,7 @@ import itertools
 import binascii
 import copy
 
-from . import ecc, bitcoin, constants, bip32
+from . import ecc, bitcoin, constants, bip32, keystore
 from .bip32 import BIP32Node
 from .util import profiler, to_bytes, bh2u, bfh, chunks, is_hex_str
 from .bitcoin import (TYPE_ADDRESS, TYPE_PUBKEY, TYPE_SCRIPT, hash_160,
@@ -55,7 +55,6 @@ from pyblake2 import blake2b
 
 if TYPE_CHECKING:
     from .wallet import Abstract_Wallet
-    from .keystore import xpubkey_to_address, xpubkey_to_pubkey
 
 _logger = get_logger(__name__)
 DEBUG_PSBT_PARSING = False
@@ -481,7 +480,7 @@ def parse_sig(x_sig):
 
 def safe_parse_pubkey(x):
     try:
-        return xpubkey_to_pubkey(x)
+        return keystore.xpubkey_to_pubkey(x)
     except:
         return x
 
@@ -516,7 +515,7 @@ def parse_scriptSig(_bytes):
         x_pubkey = bh2u(decoded[1][1])
         try:
             signatures = parse_sig([sig])
-            pubkey, address = xpubkey_to_address(x_pubkey)
+            pubkey, address = keystore.xpubkey_to_address(x_pubkey)
         except:
             raise Exception("parse_scriptSig: cannot find address in input script (p2pkh?)",
                             bh2u(_bytes))
@@ -845,7 +844,7 @@ class Transaction:
         x_pubkeys = txin['x_pubkeys']
         pubkeys = txin.get('pubkeys')
         if pubkeys is None:
-            pubkeys = [xpubkey_to_pubkey(x) for x in x_pubkeys]
+            pubkeys = [keystore.xpubkey_to_pubkey(x) for x in x_pubkeys]
             pubkeys, x_pubkeys = zip(*sorted(zip(pubkeys, x_pubkeys)))
             txin['pubkeys'] = pubkeys = list(pubkeys)
             txin['x_pubkeys'] = x_pubkeys = list(x_pubkeys)
