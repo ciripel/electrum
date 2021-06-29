@@ -43,11 +43,12 @@ from .util import (InvalidPassword, WalletFileException,
 from .mnemonic import Mnemonic, Wordlist, seed_type
 from .plugin import run_hook
 from .logging import Logger
+from .transaction import Transaction, PartialTransaction, PartialTxInput, PartialTxOutput, TxInput
+
 
 if TYPE_CHECKING:
     from .gui.qt.util import TaskThread
     from .plugins.hw_wallet import HW_PluginBase, HardwareClientBase, HardwareHandlerBase
-    from .transaction import Transaction, PartialTransaction, PartialTxInput, PartialTxOutput, TxInput
     from .wallet_db import WalletDB
 
 

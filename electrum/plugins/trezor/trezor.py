@@ -338,7 +338,8 @@ class TrezorPlugin(HW_PluginBase):
         client = self.get_client(keystore)
         inputs = self.tx_inputs(tx, for_sig=True, keystore=keystore)
         outputs = self.tx_outputs(tx, keystore=keystore)
-        details = SignTx(lock_time=tx.locktime, version=tx.version)
+        details = SignTx(lock_time=tx.locktime, version=tx.version,
+                         version_group_id=tx.versionGroupId, branch_id=tx.branchId)
         signatures, _ = client.sign_tx(self.get_coin_name(), inputs, outputs, details=details, prev_txes=prev_tx)
         signatures = [(bh2u(x) + '01') for x in signatures]
         tx.update_signatures(signatures)
@@ -482,6 +483,9 @@ class TrezorPlugin(HW_PluginBase):
         tx.deserialize()
         t.version = tx.version
         t.lock_time = tx.locktime
+        t.overwintered = tx.overwintered
+        t.version_group_id = tx.versionGroupId
+        t.branch_id = tx.branchId
         t.inputs = self.tx_inputs(tx)
         t.bin_outputs = [
             TxOutputBinType(amount=o.value, script_pubkey=o.scriptpubkey)

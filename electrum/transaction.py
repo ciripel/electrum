@@ -51,12 +51,11 @@ from .bitcoin import (TYPE_ADDRESS, TYPE_PUBKEY, TYPE_SCRIPT, hash_160,
                       base_encode, construct_witness, construct_script)
 from .crypto import sha256d
 from .logging import get_logger
-from .keystore import xpubkey_to_address, xpubkey_to_pubkey
 from pyblake2 import blake2b
 
 if TYPE_CHECKING:
     from .wallet import Abstract_Wallet
-
+    from .keystore import xpubkey_to_address, xpubkey_to_pubkey
 
 _logger = get_logger(__name__)
 DEBUG_PSBT_PARSING = False
@@ -752,6 +751,7 @@ class Transaction:
         self._version = 4
         self.overwintered = True
         self.versionGroupId = SAPLING_VERSION_GROUP_ID
+        self.branchId = SAPLING_BRANCH_ID
         self.expiryHeight = 0
         self.valueBalance = 0
         self.shieldedSpends = None
@@ -1360,6 +1360,8 @@ class PartialTxInput(TxInput, PSBTSection):
         self._trusted_address = None  # type: Optional[str]
         self.block_height = None  # type: Optional[int]  # height at which the TXO is mined; None means unknown
         self.spent_height = None  # type: Optional[int]  # height at which the TXO got spent
+        self.prevout_hash = ''
+        self.prevout_n = 0
 
     @property
     def utxo(self):
@@ -1757,6 +1759,8 @@ class PartialTransaction(Transaction):
         res._outputs = [PartialTxOutput.from_txout(txout) for txout in tx.outputs()]
         res.version = tx.version
         res.locktime = tx.locktime
+        res.versionGroupId = tx.versionGroupId
+        res.branchId = tx.branchId
         return res
 
     @classmethod
